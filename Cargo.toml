@@ -1,0 +1,73 @@
+[package]
+name = "tracing-opentelemetry-setup"
+version = "0.1.0-beta.1"
+edition = "2024"
+rust-version = "1.85"
+description = "Utilities to provide proper setup of tracing with OTEL export"
+readme = "README.md"
+repository = "https://github.com/DoumanAsh/tracing-opentelemetry-setup"
+license = "BSL-1.0"
+keywords = ["tracing", "opentelemetry"]
+include = [
+    "**/*.rs",
+    "Cargo.toml",
+    "README.md"
+]
+
+[dependencies.tracing]
+version = "0.1"
+default-features = false
+
+[dependencies.tracing-subscriber]
+version = "0.3"
+default-features = false
+
+[dependencies.tracing-opentelemetry]
+version = "0.32"
+default-features = false
+
+[dependencies.opentelemetry-appender-tracing]
+version = "0.31"
+default-features = false
+
+[dependencies.opentelemetry]
+version = "0.31"
+default-features = false
+
+[dependencies.opentelemetry_sdk]
+version = "0.31"
+default-features = false
+features = ["logs", "trace"]
+
+[dependencies.opentelemetry-otlp]
+version = "0.31"
+default-features = false
+features = ["logs", "trace"]
+
+[dependencies.tonic]
+version = "0.14"
+default-features = false
+optional = true
+
+[features]
+metrics = ["opentelemetry_sdk/metrics", "opentelemetry-otlp/metrics", "tracing-opentelemetry/metrics"]
+# Specifies you want to use tokio runtime
+rt-tokio = ["opentelemetry_sdk/rt-tokio"]
+
+# gRPC transport features
+grpc = ["opentelemetry-otlp/grpc-tonic", "tonic"]
+grpc-compression = ["grpc", "opentelemetry-otlp/gzip-tonic"]
+grpc-tls = ["grpc", "opentelemetry-otlp/tls-roots"]
+
+# HTTP transport features
+http = ["opentelemetry-otlp/http-proto"]
+http-compression = ["http", "opentelemetry-otlp/gzip-http"]
+http-tls = ["http", "opentelemetry-otlp/reqwest-rustls"]
+
+# HTTP client selection
+http-reqwest-blocking = ["http", "opentelemetry-otlp/reqwest-blocking-client"]
+http-reqwest = ["http", "opentelemetry-otlp/reqwest-client"]
+http-hyper = ["http", "opentelemetry-otlp/hyper-client"]
+
+[package.metadata.docs.rs]
+features = ["metrics", "grpc", "http"]

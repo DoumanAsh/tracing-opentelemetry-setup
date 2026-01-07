@@ -1,0 +1,27 @@
+name: Rust
+
+on:
+  push:
+    paths:
+      - '.github/workflows/rust.yml'
+      - '**.rs'
+      - '**.toml'
+    branches:
+      - master
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/rust.yml'
+      - '**.rs'
+      - '**.toml'
+    branches:
+      - '**'
+
+jobs:
+  build:
+    if: github.event.pull_request.draft == false
+    uses: DoumanAsh/douman-ci/.github/workflows/rust.yml@master
+    with:
+      min-rustc-version: "1.85.0"
+      cargo-no-features: true
+      cargo-features: "http-reqwest-blocking,metrics"
