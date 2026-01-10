@@ -91,7 +91,7 @@ impl AttributesBuilder {
 pub struct ShutdownError {
     logs: Option<OTelSdkError>,
     trace: Option<OTelSdkError>,
-    #[cfg(feature = "metrics")]
+    #[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
     metrics: Option<OTelSdkError>
 }
 
@@ -107,7 +107,7 @@ impl fmt::Debug for ShutdownError {
             fmt.field("trace", trace);
         }
 
-        #[cfg(feature = "metrics")]
+        #[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
         if let Some(metrics) = self.metrics.as_ref() {
             fmt.field("metrics", metrics);
         }
@@ -128,7 +128,7 @@ impl fmt::Display for ShutdownError {
             fmt.write_fmt(format_args!(" trace={trace}"))?
         }
 
-        #[cfg(feature = "metrics")]
+        #[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
         if let Some(metrics) = self.metrics.as_ref() {
             fmt.write_fmt(format_args!(" metrics={metrics}"))?
         }
@@ -145,7 +145,7 @@ impl std::error::Error for ShutdownError {}
 pub struct Otlp {
     logs: Option<SdkLoggerProvider>,
     trace: Option<SdkTracerProvider>,
-    #[cfg(feature = "metrics")]
+    #[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
     metrics: Option<opentelemetry_sdk::metrics::SdkMeterProvider>
 }
 
@@ -155,7 +155,7 @@ impl Otlp {
         Self {
             logs: None,
             trace: None,
-            #[cfg(feature = "metrics")]
+            #[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
             metrics: None,
         }
     }
@@ -190,7 +190,7 @@ impl Otlp {
             }
         }
 
-        #[cfg(feature = "metrics")]
+        #[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
         if let Some(metrics) = self.metrics.take() {
             if let Err(error) =  metrics.shutdown_with_timeout(limit) {
                 is_error = true;
@@ -205,15 +205,35 @@ impl Otlp {
         }
     }
 
+    #[cfg(feature = "metrics")]
+    ///Initializes [metrics](https://crates.io/crates/metrics) global recorder if metrics SDK is set up
+    ///
+    ///Requires `metrics` feature
+    ///
+    ///This function can only run once, subsequent calls will have no effect
+    pub fn init_metrics_recorder(&self, name: &'static str) {
+        use crate::opentelemetry::metrics::MeterProvider;
+
+        if let Some(metrics) = self.metrics.as_ref() {
+            let meter = metrics.meter(name);
+            let metrics = metrics_opentelemetry::OpenTelemetryMetrics::new(meter);
+            let recorder = metrics_opentelemetry::OpenTelemetryRecorder::new(metrics);
+            let _ = crate::metrics::set_global_recorder(recorder);
+        }
+    }
+
     ///Finishes initializing `tracing_subscriber::registry::Registry` with specified `name` used for tracer
     ///
     ///Cannot be called more than once as `tracing` allows only single global instance
+    ///
+    ///If feature `tracing-metrics` is enabled, then it shall record metrics via tracing events.
+    ///For details refer to its [docs](https://docs.rs/tracing-opentelemetry/latest/tracing_opentelemetry/struct.MetricsLayer.html)
     pub fn init_tracing_subscriber<R: Sync + Send + tracing::Subscriber + tracing_subscriber::layer::SubscriberExt + tracing_subscriber::util::SubscriberInitExt + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&self, name: impl Into<Cow<'static, str>>, registry: R) {
         use opentelemetry::trace::TracerProvider;
         use tracing_subscriber::layer::SubscriberExt;
         use tracing_subscriber::util::SubscriberInitExt;
 
-        #[cfg(feature = "metrics")]
+        #[cfg(feature = "tracing-metrics")]
         macro_rules! init_metrics {
             ($registry:expr) => {
                 if let Some(metrics) = self.metrics.as_ref() {
@@ -225,7 +245,7 @@ impl Otlp {
             };
         }
 
-        #[cfg(not(feature = "metrics"))]
+        #[cfg(not(feature = "tracing-metrics"))]
         macro_rules! init_metrics {
             ($registry:expr) => {
                 $registry.init()

@@ -1,6 +1,6 @@
 [package]
 name = "tracing-opentelemetry-setup"
-version = "0.1.0-beta.1"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Utilities to provide proper setup of tracing with OTEL export"
@@ -19,7 +19,7 @@ version = "0.1"
 default-features = false
 
 [dependencies.tracing-subscriber]
-version = "0.3"
+version = "0.3.22"
 default-features = false
 
 [dependencies.tracing-opentelemetry]
@@ -49,8 +49,13 @@ version = "0.14"
 default-features = false
 optional = true
 
+[dependencies.metrics-opentelemetry]
+version = "0.24"
+optional = true
+
 [features]
-metrics = ["opentelemetry_sdk/metrics", "opentelemetry-otlp/metrics", "tracing-opentelemetry/metrics"]
+metrics = ["opentelemetry_sdk/metrics", "opentelemetry-otlp/metrics", "metrics-opentelemetry"]
+tracing-metrics = ["opentelemetry_sdk/metrics", "opentelemetry-otlp/metrics", "tracing-opentelemetry/metrics"]
 # Specifies you want to use tokio runtime
 rt-tokio = ["opentelemetry_sdk/rt-tokio"]
 

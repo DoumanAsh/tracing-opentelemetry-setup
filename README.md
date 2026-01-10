@@ -3,7 +3,7 @@
 [![Rust](https://github.com/DoumanAsh/tracing-opentelemetry-setup/actions/workflows/rust.yml/badge.svg)](https://github.com/DoumanAsh/tracing-opentelemetry-setup/actions/workflows/rust.yml)
 [![Crates.io](https://img.shields.io/crates/v/tracing-opentelemetry-setup.svg)](https://crates.io/crates/tracing-opentelemetry-setup)
 [![Documentation](https://docs.rs/tracing-opentelemetry-setup/badge.svg)](https://docs.rs/crate/tracing-opentelemetry-setup/)
-[![dependency status](https://deps.rs/crate/tracing-opentelemetry-setup/0.1.0-beta.1/status.svg)](https://deps.rs/crate/tracing-opentelemetry-setup/0.1.0-beta.1)
+[![dependency status](https://deps.rs/crate/tracing-opentelemetry-setup/0.1.0/status.svg)](https://deps.rs/crate/tracing-opentelemetry-setup/0.1.0)
 
 OpenTelemetry integration for tracing.
 
@@ -13,7 +13,8 @@ MSRV 1.85
 
 ## Features
 
-- `metrics` - Enable metrics usage. Reference: https://docs.rs/tracing-opentelemetry/0.32.0/tracing_opentelemetry/struct.MetricsLayer.html
+- `metrics` - Enable integration with [metrics](https://crates.io/crates/metrics)
+- `tracing-metrics` - Enable metrics usage via [tracing-opentelemetry](https://docs.rs/tracing-opentelemetry/latest/tracing_opentelemetry/struct.MetricsLayer.html)
 - `rt-tokio` - Tell OpenTelemetry sdk that you use tokio runtime
 
 ### Grpc features
