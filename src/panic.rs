@@ -3,6 +3,7 @@
 use core::panic::Location;
 use std::panic::PanicHookInfo;
 use std::sync::OnceLock;
+use std::backtrace::{Backtrace, BacktraceStatus};
 
 ///Panic hook implementation
 pub fn panic_hook(panic: &PanicHookInfo<'_>) {
@@ -20,8 +21,8 @@ pub fn panic_hook(panic: &PanicHookInfo<'_>) {
         }
     };
 
-    let backtrace = std::backtrace::Backtrace::force_capture();
-    if let std::backtrace::BacktraceStatus::Captured  = backtrace.status() {
+    let backtrace = Backtrace::force_capture();
+    if let BacktraceStatus::Captured = backtrace.status() {
         tracing::error!(
             exception.location = %location,
             exception.stacktrace = %backtrace,
