@@ -54,7 +54,11 @@ version = "0.24"
 optional = true
 
 [features]
+# Enables propagation utilities
+propagation = []
+# Enables metrics propagation via metrics crate
 metrics = ["opentelemetry_sdk/metrics", "opentelemetry-otlp/metrics", "metrics-opentelemetry"]
+# Enables metrics propagation via tracing-opentelemetry crate
 tracing-metrics = ["opentelemetry_sdk/metrics", "opentelemetry-otlp/metrics", "tracing-opentelemetry/metrics"]
 # Specifies you want to use tokio runtime
 rt-tokio = ["opentelemetry_sdk/rt-tokio"]
@@ -75,4 +79,4 @@ http-reqwest = ["http", "opentelemetry-otlp/reqwest-client"]
 http-hyper = ["http", "opentelemetry-otlp/hyper-client"]
 
 [package.metadata.docs.rs]
-features = ["metrics", "grpc", "http"]
+features = ["metrics", "grpc", "http", "propagation"]

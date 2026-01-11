@@ -6,6 +6,7 @@
 //!
 //!## Features
 //!
+//!- `propagation` - Enables propagation utilities
 //!- `metrics` - Enable integration with [metrics](https://crates.io/crates/metrics)
 //!- `tracing-metrics` - Enable metrics usage via [tracing-opentelemetry](https://docs.rs/tracing-opentelemetry/latest/tracing_opentelemetry/struct.MetricsLayer.html)
 //!- `rt-tokio` - Tell OpenTelemetry sdk that you use tokio runtime
@@ -57,6 +58,8 @@
 #![warn(missing_docs)]
 #![allow(clippy::style)]
 
+#[cfg(feature = "propagation")]
+pub mod propagation;
 #[cfg(feature = "metrics")]
 pub use metrics_opentelemetry::metrics;
 pub use tracing;
