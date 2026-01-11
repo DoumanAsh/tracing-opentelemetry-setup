@@ -6,6 +6,7 @@
 //!
 //!## Features
 //!
+//! - `panic` - Provides panic hook implementation. Must be enabled via panic module
 //!- `propagation` - Enables propagation utilities
 //!- `metrics` - Enable integration with [metrics](https://crates.io/crates/metrics)
 //!- `tracing-metrics` - Enable metrics usage via [tracing-opentelemetry](https://docs.rs/tracing-opentelemetry/latest/tracing_opentelemetry/struct.MetricsLayer.html)
