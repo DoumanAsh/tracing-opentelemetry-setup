@@ -58,6 +58,8 @@
 #![warn(missing_docs)]
 #![allow(clippy::style)]
 
+#[cfg(feature = "panic")]
+pub mod panic;
 #[cfg(feature = "propagation")]
 pub mod propagation;
 #[cfg(feature = "metrics")]

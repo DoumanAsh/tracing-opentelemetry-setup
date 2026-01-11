@@ -54,6 +54,8 @@ version = "0.24"
 optional = true
 
 [features]
+# Enables panic hook
+panic = []
 # Enables propagation utilities
 propagation = []
 # Enables metrics propagation via metrics crate
@@ -79,4 +81,4 @@ http-reqwest = ["http", "opentelemetry-otlp/reqwest-client"]
 http-hyper = ["http", "opentelemetry-otlp/hyper-client"]
 
 [package.metadata.docs.rs]
-features = ["metrics", "grpc", "http", "propagation"]
+features = ["metrics", "grpc", "http", "propagation", "panic"]

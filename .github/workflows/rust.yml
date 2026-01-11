@@ -24,4 +24,4 @@ jobs:
     with:
       min-rustc-version: "1.85.0"
       cargo-no-features: true
-      cargo-features: "http-reqwest-blocking,metrics,propagation"
+      cargo-features: "http-reqwest-blocking,metrics,propagation,panic"
