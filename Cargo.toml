@@ -53,6 +53,11 @@ optional = true
 version = "0.24"
 optional = true
 
+[dependencies.http]
+version = "1"
+default-features = false
+optional = true
+
 [features]
 # Enables panic hook
 panic = []
@@ -71,7 +76,7 @@ grpc-compression = ["grpc", "opentelemetry-otlp/gzip-tonic"]
 grpc-tls = ["grpc", "opentelemetry-otlp/tls-roots"]
 
 # HTTP transport features
-http = ["opentelemetry-otlp/http-proto"]
+http = ["opentelemetry-otlp/http-proto", "dep:http"]
 http-compression = ["http", "opentelemetry-otlp/gzip-http"]
 http-tls = ["http", "opentelemetry-otlp/reqwest-rustls"]
 
