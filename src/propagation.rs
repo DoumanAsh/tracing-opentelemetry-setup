@@ -13,7 +13,12 @@ pub use opentelemetry::trace::Status;
 ///```rust
 ///use tracing_opentelemetry_setup::propagation::Context;
 ///
+/////Simple examples
 ///let mut dest = Vec::<(String, String)>::new();
+///Context::current().inject_into(&mut dest);
+///let mut dest = std::collections::HashMap::<String, String>::new();
+///Context::current().inject_into(&mut dest);
+///let mut dest = std::collections::BTreeMap::<String, String>::new();
 ///Context::current().inject_into(&mut dest);
 ///```
 pub trait ParentDestination {
