@@ -3,11 +3,86 @@
 use core::marker;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use opentelemetry::propagation::{Extractor, TextMapPropagator};
+use opentelemetry::propagation::{Extractor, Injector, TextMapPropagator};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 
 pub use opentelemetry::trace::Status;
-pub use opentelemetry::propagation::Injector;
+
+///Interface to inject parent trace context
+///
+///```rust
+///use tracing_opentelemetry_setup::propagation::Context;
+///
+///let mut dest = Vec::<(String, String)>::new();
+///Context::current().inject_into(&mut dest);
+///```
+pub trait ParentDestination {
+    ///Sets context `value` at `key`
+    fn set(&mut self, key: &str, value: String);
+}
+
+impl<T: ParentDestination> ParentDestination for &'_ mut T {
+    #[inline(always)]
+    fn set(&mut self, key: &str, value: String) {
+        T::set(self, key, value)
+    }
+}
+
+impl<T: ParentDestination> ParentDestination for Box<T> {
+    #[inline(always)]
+    fn set(&mut self, key: &str, value: String) {
+        T::set(self, key, value)
+    }
+}
+
+#[cfg(feature = "grpc")]
+impl ParentDestination for tonic::metadata::MetadataMap {
+    #[inline(always)]
+    fn set(&mut self, key: &str, value: String) {
+        let key = tonic::metadata::MetadataKey::from_bytes(key.as_bytes()).expect("value header key");
+        self.insert(key, value.try_into().expect("value header value"));
+    }
+}
+
+#[cfg(feature = "http")]
+impl ParentDestination for http::HeaderMap {
+    #[inline(always)]
+    fn set(&mut self, key: &str, value: String) {
+        let key = http::header::HeaderName::from_bytes(key.as_bytes()).expect("value header key");
+        self.insert(key, value.try_into().expect("value header value"));
+    }
+}
+
+impl<K: for<'a> From<&'a str>, V: From<String>> ParentDestination for Vec<(K, V)>  {
+    #[inline(always)]
+    fn set(&mut self, key: &str, value: String) {
+        self.push((key.into(), value.into()));
+    }
+}
+
+impl<K: for<'a> From<&'a str> + core::hash::Hash + Eq, V: From<String>, S: core::hash::BuildHasher> ParentDestination for std::collections::HashMap<K, V, S>  {
+    #[inline(always)]
+    fn set(&mut self, key: &str, value: String) {
+        self.insert(key.into(), value.into());
+    }
+}
+
+impl<K: for<'a> From<&'a str> + Ord, V: From<String>> ParentDestination for std::collections::BTreeMap<K, V>  {
+    #[inline(always)]
+    fn set(&mut self, key: &str, value: String) {
+        self.insert(key.into(), value.into());
+    }
+}
+
+#[repr(transparent)]
+struct ParentDestinationImpl<T: ParentDestination>(T);
+
+impl<T: ParentDestination> Injector for ParentDestinationImpl<T> {
+    #[inline(always)]
+    fn set(&mut self, key: &str, value: String) {
+        ParentDestination::set(&mut self.0, key, value)
+    }
+}
 
 ///Interface to extract parent trace context
 pub trait ParentSource {
@@ -162,7 +237,7 @@ impl<'a, K: AsRef<str> + 'a, V: AsRef<str> + 'a, T: IntoIterator<Item = (&'a K, 
     }
 }
 
-impl<K: core::borrow::Borrow<str> + core::hash::Hash + Eq, V: AsRef<str>> ParentSource for std::collections::HashMap<K, V> {
+impl<K: core::borrow::Borrow<str> + core::hash::Hash + Eq, V: AsRef<str>, S: core::hash::BuildHasher> ParentSource for std::collections::HashMap<K, V, S> {
     #[inline(always)]
     fn get(&self, expected_key: &str) -> Option<&str> {
         std::collections::HashMap::get(self, expected_key).map(|value| value.as_ref())
@@ -229,7 +304,7 @@ impl Context {
 
     #[inline(always)]
     ///Extract `self` into `dest`
-    pub fn inject_into(&self, dest: &mut dyn Injector) {
-        TraceContextPropagator::new().inject_context(&self.span.context(), dest);
+    pub fn inject_into(&self, dest: &mut impl ParentDestination) {
+        TraceContextPropagator::new().inject_context(&self.span.context(), &mut ParentDestinationImpl(dest));
     }
 }
