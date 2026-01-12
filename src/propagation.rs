@@ -3,10 +3,9 @@
 use core::marker;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+use opentelemetry::trace::Status;
 use opentelemetry::propagation::{Extractor, Injector, TextMapPropagator};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
-
-pub use opentelemetry::trace::Status;
 
 ///Interface to inject parent trace context
 ///
@@ -90,6 +89,19 @@ impl<T: ParentDestination> Injector for ParentDestinationImpl<T> {
 }
 
 ///Interface to extract parent trace context
+///
+///### Usage
+///
+///You can rely on generic [ParentSourceIter] when builtin implementations are not enough
+///
+///```rust
+///use tracing_opentelemetry_setup::propagation::{Context, ParentSourceIter};
+///
+///let source = std::collections::HashMap::<String, String>::new();
+///Context::current().set_parent_from(ParentSourceIter::new(&source));
+/////or directly since it is map
+///Context::current().set_parent_from(&source);
+///```
 pub trait ParentSource {
     ///Retrieves the value by specified key
     fn get(&self, key: &str) -> Option<&str>;
@@ -293,9 +305,14 @@ impl Context {
     }
 
     #[inline(always)]
-    ///Sets span status
-    pub fn set_status(&self, status: Status) {
-        self.span.set_status(status);
+    ///Sets span status where `Ok` variant indicates success while `Err` contains error message
+    pub fn set_status(&self, status: Result<(), std::borrow::Cow<'static, str>>) {
+        self.span.set_status(match status {
+            Ok(()) => Status::Ok,
+            Err(description) => Status::Error {
+                description,
+            }
+        });
     }
 
     #[inline(always)]
