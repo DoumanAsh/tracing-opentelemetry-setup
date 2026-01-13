@@ -41,9 +41,7 @@
 //! use tracing_subscriber::layer::SubscriberExt;
 //!
 //! let default_attrs = Attributes::builder().with_attr("service.name", "サービス").finish();
-//! let trace_settings = TraceSettings {
-//!     sample_rate: 1.0
-//! };
+//! let trace_settings = TraceSettings::new(1.0);
 //! let destination = Destination {
 //!     protocol: Protocol::HttpBinary,
 //!     url: "http://localhost:45081".into()

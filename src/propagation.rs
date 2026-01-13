@@ -262,7 +262,7 @@ impl<K: core::borrow::Borrow<str> + core::hash::Hash + Eq, V: AsRef<str>, S: cor
 
     #[inline(always)]
     fn keys(&self) -> impl Iterator<Item = &str> {
-        self.into_iter().map(|(key, _)| key.borrow())
+        self.keys().map(|key| key.borrow())
     }
 }
 
@@ -274,7 +274,7 @@ impl<K: core::borrow::Borrow<str> + Ord, V: AsRef<str>> ParentSource for std::co
 
     #[inline(always)]
     fn keys(&self) -> impl Iterator<Item = &str> {
-        self.into_iter().map(|(key, _)| key.borrow())
+        self.keys().map(|key| key.borrow())
     }
 }
 

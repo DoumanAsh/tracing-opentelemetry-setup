@@ -322,10 +322,98 @@ pub struct Builder<'a> {
     compression: bool,
 }
 
+macro_rules! declare_trace_limits {
+    ({$($name:ident,)+}) => {
+        struct SpanLimits {
+            $(
+                $name: u32,
+            )+
+        }
+
+        impl SpanLimits {
+            const DEFAULT: u32 = 128;
+
+            #[inline(always)]
+            const fn new() -> Self {
+                Self {
+                    $(
+                        $name: Self::DEFAULT,
+                    )+
+                }
+            }
+
+            #[inline(always)]
+            fn apply_to(&self, mut builder: opentelemetry_sdk::trace::TracerProviderBuilder) -> opentelemetry_sdk::trace::TracerProviderBuilder {
+                $(
+                    if self.$name != Self::DEFAULT {
+                        builder = builder.$name(self.$name);
+                    }
+                )+
+                builder
+            }
+        }
+    };
+}
+
+declare_trace_limits!({
+    with_max_events_per_span,
+    with_max_attributes_per_span,
+    with_max_links_per_span,
+    with_max_attributes_per_link,
+    with_max_attributes_per_event,
+});
+
 ///Trace configuration
 pub struct TraceSettings {
     ///Sample ratio to apply to all traces (unless parent overrides it)
-    pub sample_rate: f64,
+    sample_rate: f64,
+    limits: SpanLimits,
+}
+
+macro_rules! set_trace_limit {
+    ($limits:expr, $name:ident) => {
+        $limits.$name = $name;
+    };
+}
+
+impl TraceSettings {
+    ///Creates new instance with provided `sample_rate`
+    pub const fn new(sample_rate: f64) -> Self {
+        Self {
+            sample_rate,
+            limits: SpanLimits::new()
+        }
+    }
+
+    ///The max events that can be added to a Span. Defaults to 128
+    pub const fn with_max_events_per_span(mut self, with_max_events_per_span: u32) -> Self {
+        set_trace_limit!(self.limits, with_max_events_per_span);
+        self
+    }
+
+    ///The max attributes that can be added to a Span.
+    pub const fn with_max_attributes_per_span(mut self, with_max_attributes_per_span: u32) -> Self {
+        set_trace_limit!(self.limits, with_max_attributes_per_span);
+        self
+    }
+
+    ///The max links that can be added to a Span. Defaults to 128
+    pub const fn with_max_links_per_span(mut self, with_max_links_per_span: u32) -> Self {
+        set_trace_limit!(self.limits, with_max_links_per_span);
+        self
+    }
+
+    ///The max attributes that can be added into an Event. Defaults to 128
+    pub const fn with_max_attributes_per_event(mut self, with_max_attributes_per_event: u32) -> Self {
+        set_trace_limit!(self.limits, with_max_attributes_per_event);
+        self
+    }
+
+    ///The max attributes that can be added into a Link. Defaults to 128
+    pub const fn with_max_attributes_per_link(mut self, with_max_attributes_per_link: u32) -> Self {
+        set_trace_limit!(self.limits, with_max_attributes_per_link);
+        self
+    }
 }
 
 #[cfg(feature = "metrics")]
@@ -516,6 +604,7 @@ impl<'a> Builder<'a> {
             let sample_rate = _settings.sample_rate.clamp(0.0, 1.0);
             let sampler = opentelemetry_sdk::trace::Sampler::ParentBased(Box::new(opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(sample_rate)));
             let mut builder = SdkTracerProvider::builder().with_sampler(sampler).with_id_generator(opentelemetry_sdk::trace::RandomIdGenerator::default());
+            builder = _settings.limits.apply_to(builder);
             if let Some(attrs) = _attrs {
                 builder = builder.with_resource(attrs.0.clone());
             }
