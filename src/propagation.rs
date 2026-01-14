@@ -307,12 +307,30 @@ impl Context {
     #[inline(always)]
     ///Sets span status where `Ok` variant indicates success while `Err` contains error message
     pub fn set_status(&self, status: Result<(), std::borrow::Cow<'static, str>>) {
-        self.span.set_status(match status {
-            Ok(()) => Status::Ok,
-            Err(description) => Status::Error {
-                description,
-            }
-        });
+        if !self.span.is_none() {
+            self.span.set_status(match status {
+                Ok(()) => Status::Ok,
+                Err(description) => Status::Error {
+                    description,
+                }
+            });
+        }
+    }
+
+    #[inline(always)]
+    ///Sets span status from provided `error`
+    ///
+    ///In addition to span status, it populates attributes `error.type` and `error.message`
+    ///
+    ///Note that it requires you to declare these fields ahead of time when creating span
+    pub fn set_error<E: core::error::Error>(&self, error: &E) {
+        if !self.span.is_none() {
+            self.span.record("error.type", core::any::type_name::<E>());
+            self.span.record("error.message", tracing::field::display(error));
+            self.span.set_status(Status::Error {
+                description: error.to_string().into()
+            });
+        }
     }
 
     #[inline(always)]
@@ -320,13 +338,17 @@ impl Context {
     ///
     ///Has effect only once
     pub fn set_parent_from(&self, source: impl ParentSource) {
-        let parent = TraceContextPropagator::new().extract(&ParentSourceImpl(source));
-        let _ = self.span.set_parent(parent);
+        if !self.span.is_none() {
+            let parent = TraceContextPropagator::new().extract(&ParentSourceImpl(source));
+            let _ = self.span.set_parent(parent);
+        }
     }
 
     #[inline(always)]
     ///Extract `self` into `dest`
     pub fn inject_into(&self, dest: &mut impl ParentDestination) {
-        TraceContextPropagator::new().inject_context(&self.span.context(), &mut ParentDestinationImpl(dest));
+        if !self.span.is_none() {
+            TraceContextPropagator::new().inject_context(&self.span.context(), &mut ParentDestinationImpl(dest));
+        }
     }
 }
