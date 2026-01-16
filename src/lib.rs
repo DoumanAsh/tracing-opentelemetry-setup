@@ -12,6 +12,10 @@
 //!- `tracing-metrics` - Enable metrics usage via [tracing-opentelemetry](https://docs.rs/tracing-opentelemetry/latest/tracing_opentelemetry/struct.MetricsLayer.html)
 //!- `rt-tokio` - Tell OpenTelemetry sdk that you use tokio runtime
 //!
+//!### Non-standard exporters
+//!
+//!- `datadog` - Enables datadog agent exporter
+//!
 //!### Grpc features
 //!
 //!- `grpc` - Enables tonic based gRPC transport

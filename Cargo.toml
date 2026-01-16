@@ -44,6 +44,12 @@ version = "0.31"
 default-features = false
 features = ["logs", "trace"]
 
+[dependencies.opentelemetry-datadog]
+version = "0.19"
+default-features = false
+optional = true
+features = ["intern-ahash", "reqwest-client"]
+
 [dependencies.tonic]
 version = "0.14"
 default-features = false
@@ -70,6 +76,9 @@ tracing-metrics = ["opentelemetry_sdk/metrics", "opentelemetry-otlp/metrics", "t
 # Specifies you want to use tokio runtime
 rt-tokio = ["opentelemetry_sdk/rt-tokio"]
 
+# non-standard exporters
+datadog = ["opentelemetry-datadog"]
+
 # gRPC transport features
 grpc = ["opentelemetry-otlp/grpc-tonic", "tonic"]
 grpc-compression = ["grpc", "opentelemetry-otlp/gzip-tonic"]
@@ -86,4 +95,4 @@ http-reqwest = ["http", "opentelemetry-otlp/reqwest-client"]
 http-hyper = ["http", "opentelemetry-otlp/hyper-client"]
 
 [package.metadata.docs.rs]
-features = ["metrics", "grpc", "http", "propagation", "panic"]
+features = ["metrics", "grpc", "http", "propagation", "panic", "datadog"]

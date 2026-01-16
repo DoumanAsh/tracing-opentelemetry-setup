@@ -29,6 +29,20 @@ fn create_metadata_map(headers: &[(String, String)]) -> tonic::metadata::Metadat
     result
 }
 
+#[cfg(feature = "datadog")]
+#[cold]
+#[inline(never)]
+fn unsupported_datadog_feature() -> ! {
+    panic!("Attempt to use 'datadog' while it doesn't support logs functionality")
+}
+
+#[cfg(not(feature = "datadog"))]
+#[cold]
+#[inline(never)]
+fn missing_datadog_feature() -> ! {
+    panic!("Attempt to use 'datadog' when corresponding feature is not enabled")
+}
+
 #[cfg(not(feature = "grpc"))]
 #[cold]
 #[inline(never)]
@@ -288,6 +302,8 @@ pub enum Protocol {
     HttpBinary,
     ///HTTP
     HttpJson,
+    ///Datadog agent exporter
+    HttpDatadog,
 }
 
 impl Protocol {
@@ -298,6 +314,7 @@ impl Protocol {
             Self::Grpc => opentelemetry_otlp::Protocol::Grpc,
             Self::HttpJson => opentelemetry_otlp::Protocol::HttpJson,
             Self::HttpBinary => opentelemetry_otlp::Protocol::HttpBinary,
+            Self::HttpDatadog => unreachable!(),
         }
 
     }
@@ -363,11 +380,50 @@ declare_trace_limits!({
     with_max_attributes_per_event,
 });
 
+#[derive(Copy, Clone, Debug)]
+struct AlwaysOnSampler;
+
+impl opentelemetry_sdk::trace::ShouldSample for AlwaysOnSampler {
+    #[inline(always)]
+    fn should_sample(&self, parent_context: Option<&opentelemetry::Context>, _: opentelemetry::TraceId, _: &str, _: &opentelemetry::trace::SpanKind, _: &[opentelemetry::KeyValue], _: &[opentelemetry::trace::Link]) -> opentelemetry::trace::SamplingResult {
+        use opentelemetry::trace::TraceContextExt;
+
+        opentelemetry::trace::SamplingResult {
+            decision: opentelemetry::trace::SamplingDecision::RecordAndSample,
+            attributes: Vec::new(),
+            trace_state: match parent_context {
+                Some(ctx) => ctx.span().span_context().trace_state().clone(),
+                None => opentelemetry::trace::TraceState::default(),
+            },
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+struct AlwaysOffSampler;
+
+impl opentelemetry_sdk::trace::ShouldSample for AlwaysOffSampler {
+    #[inline(always)]
+    fn should_sample(&self, parent_context: Option<&opentelemetry::Context>, _: opentelemetry::TraceId, _: &str, _: &opentelemetry::trace::SpanKind, _: &[opentelemetry::KeyValue], _: &[opentelemetry::trace::Link]) -> opentelemetry::trace::SamplingResult {
+        use opentelemetry::trace::TraceContextExt;
+
+        opentelemetry::trace::SamplingResult {
+            decision: opentelemetry::trace::SamplingDecision::Drop,
+            attributes: Vec::new(),
+            trace_state: match parent_context {
+                Some(ctx) => ctx.span().span_context().trace_state().clone(),
+                None => opentelemetry::trace::TraceState::default(),
+            },
+        }
+    }
+}
+
 ///Trace configuration
 pub struct TraceSettings {
     ///Sample ratio to apply to all traces (unless parent overrides it)
     sample_rate: f64,
     limits: SpanLimits,
+    respect_parent: bool,
 }
 
 macro_rules! set_trace_limit {
@@ -381,8 +437,15 @@ impl TraceSettings {
     pub const fn new(sample_rate: f64) -> Self {
         Self {
             sample_rate,
-            limits: SpanLimits::new()
+            limits: SpanLimits::new(),
+            respect_parent: true,
         }
+    }
+
+    ///Specifies whether to respect parent trace's sampling decision. Defaults to `true`
+    pub const fn with_respect_parent_sampling(mut self, value: bool) -> Self {
+        self.respect_parent = value;
+        self
     }
 
     ///The max events that can be added to a Span. Defaults to 128
@@ -513,10 +576,17 @@ impl<'a> Builder<'a> {
                 }
 
 
-                builder.with_timeout(self.timeout).build().expect("Failed to initialize logs grpc exporter")
+                let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize logs grpc exporter");
+                opentelemetry_sdk::logs::BatchLogProcessor::builder(exporter).build()
             },
             #[cfg(not(feature = "grpc"))]
             Protocol::Grpc => missing_grpc_feature(),
+
+            #[cfg(feature = "datadog")]
+            Protocol::HttpDatadog => unsupported_datadog_feature(),
+            #[cfg(not(feature = "datadog"))]
+            Protocol::HttpDatadog => missing_datadog_feature(),
+
             #[cfg(feature = "http")]
             http => {
                 use opentelemetry_otlp::{WithHttpConfig, WithExportConfig};
@@ -531,7 +601,8 @@ impl<'a> Builder<'a> {
                     let headers = self.headers.iter().map(|(key, value)| (key.clone(), value.clone())).collect();
                     builder = builder.with_headers(headers);
                 }
-                builder.with_timeout(self.timeout).build().expect("Failed to initialize logs http exporter")
+                let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize logs http exporter");
+                opentelemetry_sdk::logs::BatchLogProcessor::builder(exporter).build()
             },
             #[cfg(not(feature = "http"))]
             _ => missing_http_feature(),
@@ -545,7 +616,7 @@ impl<'a> Builder<'a> {
                 builder = builder.with_resource(attrs.0.clone());
             }
 
-            this.otlp.logs = Some(builder.with_batch_exporter(_exporter).build());
+            this.otlp.logs = Some(builder.with_log_processor(_exporter).build());
             return this;
         }
     }
@@ -558,6 +629,7 @@ impl<'a> Builder<'a> {
             panic!("Trace is already initialized")
         }
 
+        let _batch_config = opentelemetry_sdk::trace::BatchConfigBuilder::default().build();
         let _exporter = match self.destination.protocol {
             #[cfg(feature = "grpc")]
             Protocol::Grpc => {
@@ -574,10 +646,20 @@ impl<'a> Builder<'a> {
                 }
 
 
-                builder.with_timeout(self.timeout).build().expect("Failed to initialize trace grpc exporter")
+                let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize trace grpc exporter");
+                opentelemetry_sdk::trace::BatchSpanProcessor::new(exporter, _batch_config)
             },
             #[cfg(not(feature = "grpc"))]
             Protocol::Grpc => missing_grpc_feature(),
+
+            #[cfg(feature = "datadog")]
+            Protocol::HttpDatadog => {
+                let exporter = opentelemetry_datadog::new_pipeline().with_agent_endpoint(self.destination.url.clone()).build_exporter().expect("Failed to initialize datadog exporter");
+                opentelemetry_sdk::trace::BatchSpanProcessor::new(exporter, _batch_config)
+            },
+            #[cfg(not(feature = "datadog"))]
+            Protocol::HttpDatadog => missing_datadog_feature(),
+
             #[cfg(feature = "http")]
             http => {
                 use opentelemetry_otlp::{WithHttpConfig, WithExportConfig};
@@ -592,7 +674,8 @@ impl<'a> Builder<'a> {
                     let headers = self.headers.iter().map(|(key, value)| (key.clone(), value.clone())).collect();
                     builder = builder.with_headers(headers);
                 }
-                builder.with_timeout(self.timeout).build().expect("Failed to initialize trace http exporter")
+                let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize trace http exporter");
+                opentelemetry_sdk::trace::BatchSpanProcessor::new(exporter, _batch_config)
             },
             #[cfg(not(feature = "http"))]
             _ => missing_http_feature(),
@@ -602,14 +685,26 @@ impl<'a> Builder<'a> {
         {
             let mut this = self;
             let sample_rate = _settings.sample_rate.clamp(0.0, 1.0);
-            let sampler = opentelemetry_sdk::trace::Sampler::ParentBased(Box::new(opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(sample_rate)));
-            let mut builder = SdkTracerProvider::builder().with_sampler(sampler).with_id_generator(opentelemetry_sdk::trace::RandomIdGenerator::default());
+            let mut builder = SdkTracerProvider::builder().with_id_generator(opentelemetry_sdk::trace::RandomIdGenerator::default());
+            if _settings.respect_parent {
+                let sampler = opentelemetry_sdk::trace::Sampler::ParentBased(Box::new(opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(sample_rate)));
+                builder = builder.with_sampler(sampler);
+            } else {
+                if sample_rate == 0.0 {
+                    builder = builder.with_sampler(AlwaysOffSampler);
+                } else if sample_rate == 1.0 {
+                    builder = builder.with_sampler(AlwaysOnSampler);
+                } else {
+                    let sampler = opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(sample_rate);
+                    builder = builder.with_sampler(sampler);
+                }
+            }
             builder = _settings.limits.apply_to(builder);
             if let Some(attrs) = _attrs {
                 builder = builder.with_resource(attrs.0.clone());
             }
 
-            this.otlp.trace = Some(builder.with_batch_exporter(_exporter).build());
+            this.otlp.trace = Some(builder.with_span_processor(_exporter).build());
             return this;
         }
     }
