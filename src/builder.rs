@@ -359,6 +359,7 @@ macro_rules! declare_trace_limits {
                 }
             }
 
+            #[allow(unused)]
             #[inline(always)]
             fn apply_to(&self, mut builder: opentelemetry_sdk::trace::TracerProviderBuilder) -> opentelemetry_sdk::trace::TracerProviderBuilder {
                 $(
@@ -380,6 +381,7 @@ declare_trace_limits!({
     with_max_attributes_per_event,
 });
 
+    #[allow(unused)]
 #[derive(Copy, Clone, Debug)]
 struct AlwaysOnSampler;
 
@@ -399,6 +401,7 @@ impl opentelemetry_sdk::trace::ShouldSample for AlwaysOnSampler {
     }
 }
 
+#[allow(unused)]
 #[derive(Copy, Clone, Debug)]
 struct AlwaysOffSampler;
 
@@ -420,9 +423,12 @@ impl opentelemetry_sdk::trace::ShouldSample for AlwaysOffSampler {
 
 ///Trace configuration
 pub struct TraceSettings {
+    #[allow(unused)]
     ///Sample ratio to apply to all traces (unless parent overrides it)
     sample_rate: f64,
+    #[allow(unused)]
     limits: SpanLimits,
+    #[allow(unused)]
     respect_parent: bool,
 }
 
@@ -681,7 +687,7 @@ impl<'a> Builder<'a> {
             _ => missing_http_feature(),
         };
 
-        #[cfg(any(feature = "grpc", feature = "http"))]
+        #[cfg(any(feature = "grpc", feature = "http", feature = "datadog"))]
         {
             let mut this = self;
             let sample_rate = _settings.sample_rate.clamp(0.0, 1.0);
@@ -738,6 +744,12 @@ impl<'a> Builder<'a> {
             },
             #[cfg(not(feature = "grpc"))]
             Protocol::Grpc => missing_grpc_feature(),
+
+            #[cfg(feature = "datadog")]
+            Protocol::HttpDatadog => unsupported_datadog_feature(),
+            #[cfg(not(feature = "datadog"))]
+            Protocol::HttpDatadog => missing_datadog_feature(),
+
             #[cfg(feature = "http")]
             http => {
                 use opentelemetry_otlp::{WithHttpConfig, WithExportConfig};
