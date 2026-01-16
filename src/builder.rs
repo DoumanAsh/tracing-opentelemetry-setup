@@ -485,13 +485,13 @@ impl TraceSettings {
     }
 }
 
-#[cfg(feature = "metrics")]
+#[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
 ///Metrics settings
 pub struct MetricsSettings {
     temporality: opentelemetry_sdk::metrics::Temporality,
 }
 
-#[cfg(feature = "metrics")]
+#[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
 impl MetricsSettings {
     #[inline]
     ///Creates new instance with following defaults:
@@ -715,7 +715,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    #[cfg(feature = "metrics")]
+    #[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
     ///Enables `metrics` exporter with provided `attrs` annotating metrics
     ///
     ///Panics if called more than once
