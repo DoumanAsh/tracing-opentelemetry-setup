@@ -381,7 +381,7 @@ declare_trace_limits!({
     with_max_attributes_per_event,
 });
 
-    #[allow(unused)]
+#[allow(unused)]
 #[derive(Copy, Clone, Debug)]
 struct AlwaysOnSampler;
 

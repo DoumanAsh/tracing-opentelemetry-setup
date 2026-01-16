@@ -14,7 +14,7 @@
 //!
 //!### Non-standard exporters
 //!
-//!- `datadog` - Enables datadog agent exporter
+//!- `datadog` - Enables datadog agent exporter. Currently supports only traces
 //!
 //!### Grpc features
 //!

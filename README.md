@@ -3,7 +3,7 @@
 [![Rust](https://github.com/DoumanAsh/tracing-opentelemetry-setup/actions/workflows/rust.yml/badge.svg)](https://github.com/DoumanAsh/tracing-opentelemetry-setup/actions/workflows/rust.yml)
 [![Crates.io](https://img.shields.io/crates/v/tracing-opentelemetry-setup.svg)](https://crates.io/crates/tracing-opentelemetry-setup)
 [![Documentation](https://docs.rs/tracing-opentelemetry-setup/badge.svg)](https://docs.rs/crate/tracing-opentelemetry-setup/)
-[![dependency status](https://deps.rs/crate/tracing-opentelemetry-setup/0.3.0/status.svg)](https://deps.rs/crate/tracing-opentelemetry-setup/0.3.0)
+[![dependency status](https://deps.rs/crate/tracing-opentelemetry-setup/0.4.0/status.svg)](https://deps.rs/crate/tracing-opentelemetry-setup/0.4.0)
 
 OpenTelemetry integration for tracing.
 
@@ -21,7 +21,7 @@ MSRV 1.85
 
 ### Non-standard exporters
 
-- `datadog` - Enables datadog agent exporter
+- `datadog` - Enables datadog agent exporter. Currently supports only traces
 
 ### Grpc features
 
