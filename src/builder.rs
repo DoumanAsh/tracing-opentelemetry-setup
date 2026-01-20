@@ -303,7 +303,7 @@ pub enum Protocol {
     ///HTTP
     HttpJson,
     ///Datadog agent exporter
-    HttpDatadog,
+    DatadogAgent,
 }
 
 impl Protocol {
@@ -314,7 +314,7 @@ impl Protocol {
             Self::Grpc => opentelemetry_otlp::Protocol::Grpc,
             Self::HttpJson => opentelemetry_otlp::Protocol::HttpJson,
             Self::HttpBinary => opentelemetry_otlp::Protocol::HttpBinary,
-            Self::HttpDatadog => unreachable!(),
+            Self::DatadogAgent => unreachable!(),
         }
 
     }
@@ -589,9 +589,9 @@ impl<'a> Builder<'a> {
             Protocol::Grpc => missing_grpc_feature(),
 
             #[cfg(feature = "datadog")]
-            Protocol::HttpDatadog => unsupported_datadog_feature(),
+            Protocol::DatadogAgent => unsupported_datadog_feature(),
             #[cfg(not(feature = "datadog"))]
-            Protocol::HttpDatadog => missing_datadog_feature(),
+            Protocol::DatadogAgent => missing_datadog_feature(),
 
             #[cfg(feature = "http")]
             http => {
@@ -659,12 +659,12 @@ impl<'a> Builder<'a> {
             Protocol::Grpc => missing_grpc_feature(),
 
             #[cfg(feature = "datadog")]
-            Protocol::HttpDatadog => {
+            Protocol::DatadogAgent => {
                 let exporter = opentelemetry_datadog::new_pipeline().with_agent_endpoint(self.destination.url.clone()).build_exporter().expect("Failed to initialize datadog exporter");
                 opentelemetry_sdk::trace::BatchSpanProcessor::new(exporter, _batch_config)
             },
             #[cfg(not(feature = "datadog"))]
-            Protocol::HttpDatadog => missing_datadog_feature(),
+            Protocol::DatadogAgent => missing_datadog_feature(),
 
             #[cfg(feature = "http")]
             http => {
@@ -746,9 +746,9 @@ impl<'a> Builder<'a> {
             Protocol::Grpc => missing_grpc_feature(),
 
             #[cfg(feature = "datadog")]
-            Protocol::HttpDatadog => unsupported_datadog_feature(),
+            Protocol::DatadogAgent => unsupported_datadog_feature(),
             #[cfg(not(feature = "datadog"))]
-            Protocol::HttpDatadog => missing_datadog_feature(),
+            Protocol::DatadogAgent => missing_datadog_feature(),
 
             #[cfg(feature = "http")]
             http => {
