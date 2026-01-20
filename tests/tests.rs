@@ -17,7 +17,6 @@ pub fn should_export_datadog_agent_logs() {
         #[inline(always)]
         fn drop(&mut self) {
             self.clean();
-            let _ = std::fs::remove_file(self.0);
         }
     }
 

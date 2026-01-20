@@ -176,6 +176,12 @@ impl<O: io::Write, IO: Fn() -> io::Result<O> + Sync + Send + 'static> openteleme
             if let Err(error) = serde_json::to_writer(&mut out, &record) {
                 return Err(opentelemetry_sdk::error::OTelSdkError::InternalFailure(error.to_string()))
             }
+            if let Err(error) = out.write_all(b"\n") {
+                return Err(opentelemetry_sdk::error::OTelSdkError::InternalFailure(error.to_string()))
+            }
+            if let Err(error) = out.flush() {
+                return Err(opentelemetry_sdk::error::OTelSdkError::InternalFailure(error.to_string()))
+            }
         }
 
         Ok(())
