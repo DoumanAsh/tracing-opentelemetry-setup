@@ -29,6 +29,13 @@ fn create_metadata_map(headers: &[(String, String)]) -> tonic::metadata::Metadat
     result
 }
 
+#[cfg(all(feature = "datadog", feature = "metrics"))]
+#[cold]
+#[inline(never)]
+fn unsupported_datadog_feature() -> ! {
+    panic!("Attempt to use 'datadog' while it doesn't support metrics functionality")
+}
+
 #[cfg(not(feature = "datadog"))]
 #[cold]
 #[inline(never)]
