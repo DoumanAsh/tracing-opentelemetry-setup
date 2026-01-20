@@ -64,5 +64,5 @@ Make sure `tracing-opentelemetry-setup` is installed to your dependencies
  otlp.init_tracing_subscriber("tracing-opentelemetry", registry);
 
  //Do your job then shutdown to make sure you flush everything
- otlp.shutdown(core::time::Duration::ZERO).expect("successfully shut down OTLP")
+ otlp.shutdown(None).expect("successfully shut down OTLP")
 ```

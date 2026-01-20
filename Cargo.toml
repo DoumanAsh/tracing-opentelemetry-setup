@@ -44,12 +44,6 @@ version = "0.31"
 default-features = false
 features = ["logs", "trace"]
 
-[dependencies.opentelemetry-datadog]
-version = "0.19"
-default-features = false
-optional = true
-features = ["intern-ahash", "reqwest-client"]
-
 [dependencies.tonic]
 version = "0.14"
 default-features = false
@@ -62,6 +56,30 @@ optional = true
 [dependencies.http]
 version = "1"
 default-features = false
+optional = true
+
+# Datadog related deps
+[dependencies.serde]
+version = "1"
+default-features = false
+optional = true
+
+[dependencies.opentelemetry-datadog]
+version = "0.19"
+default-features = false
+optional = true
+features = ["intern-ahash", "reqwest-client"]
+
+[dependencies.time]
+version = "0.3"
+default-features = false
+optional = true
+features = ["formatting"]
+
+[dependencies.serde_json]
+version = "1"
+default-features = false
+features = ["std"]
 optional = true
 
 [features]
@@ -77,7 +95,7 @@ tracing-metrics = ["opentelemetry_sdk/metrics", "opentelemetry-otlp/metrics", "t
 rt-tokio = ["opentelemetry_sdk/rt-tokio"]
 
 # non-standard exporters
-datadog = ["opentelemetry-datadog"]
+datadog = ["serde", "time", "serde_json", "opentelemetry-datadog"]
 
 # gRPC transport features
 grpc = ["opentelemetry-otlp/grpc-tonic", "tonic"]

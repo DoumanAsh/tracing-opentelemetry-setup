@@ -29,13 +29,6 @@ fn create_metadata_map(headers: &[(String, String)]) -> tonic::metadata::Metadat
     result
 }
 
-#[cfg(feature = "datadog")]
-#[cold]
-#[inline(never)]
-fn unsupported_datadog_feature() -> ! {
-    panic!("Attempt to use 'datadog' while it doesn't support logs functionality")
-}
-
 #[cfg(not(feature = "datadog"))]
 #[cold]
 #[inline(never)]
@@ -182,11 +175,12 @@ impl Otlp {
 
     ///Performs shutdown, limiting it to `limit` for individual components
     ///
-    ///If `limit` is zero, then default timeout of `10` seconds is used
-    pub fn shutdown(&mut self, mut limit: time::Duration) -> Result<(), ShutdownError> {
-        if limit.is_zero() {
-            limit = time::Duration::from_secs(10);
-        }
+    ///If `limit` is `None` then defaults to 10 second wait
+    pub fn shutdown(&mut self, limit: Option<time::Duration>) -> Result<(), ShutdownError> {
+        let limit = match limit {
+            Some(limit) => limit,
+            None => time::Duration::from_secs(10),
+        };
 
         let mut is_error = false;
         let mut errors = ShutdownError::default();
@@ -284,12 +278,62 @@ impl Otlp {
             init_metrics!(registry)
         }
     }
+
+    ///Finishes initializing `tracing_subscriber::registry::Registry` with specified `name` used for tracer
+    ///
+    ///Cannot be called more than once as `tracing` allows only single global instance
+    ///
+    ///If feature `tracing-metrics` is enabled, then it shall record metrics via tracing events.
+    ///For details refer to its [docs](https://docs.rs/tracing-opentelemetry/latest/tracing_opentelemetry/struct.MetricsLayer.html)
+    pub fn local_init_tracing_subscriber<R: Sync + Send + tracing::Subscriber + tracing_subscriber::layer::SubscriberExt + tracing_subscriber::util::SubscriberInitExt + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&self, name: impl Into<Cow<'static, str>>, registry: R) -> impl Drop {
+        use opentelemetry::trace::TracerProvider;
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+
+        #[cfg(feature = "tracing-metrics")]
+        macro_rules! init_metrics {
+            ($registry:expr) => {
+                if let Some(metrics) = self.metrics.as_ref() {
+                    let metrics = tracing_opentelemetry::MetricsLayer::new(metrics.clone());
+                    $registry.with(metrics).set_default();
+                } else {
+                    $registry.set_default()
+                }
+            };
+        }
+
+        #[cfg(not(feature = "tracing-metrics"))]
+        macro_rules! init_metrics {
+            ($registry:expr) => {
+                $registry.set_default()
+            }
+        }
+
+        if let Some(trace) = self.trace.as_ref() {
+            let layer = tracing_opentelemetry::OpenTelemetryLayer::new(trace.tracer(name));
+            let registry = registry.with(layer);
+            if let Some(logs) = self.logs.as_ref() {
+                let layer = opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(logs);
+                let registry = registry.with(layer);
+                init_metrics!(registry)
+            } else {
+                init_metrics!(registry)
+            }
+        } else if let Some(logs) = self.logs.as_ref() {
+            let layer = opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(logs);
+            let registry = registry.with(layer);
+            init_metrics!(registry)
+        } else {
+            init_metrics!(registry)
+        }
+    }
+
 }
 
 impl Drop for Otlp {
     #[inline(always)]
     fn drop(&mut self) {
-        let _ = self.shutdown(time::Duration::ZERO);
+        let _ = self.shutdown(None);
     }
 }
 
@@ -303,6 +347,10 @@ pub enum Protocol {
     ///HTTP
     HttpJson,
     ///Datadog agent exporter
+    ///
+    ///In case of traces expects valid network address to send data
+    ///
+    ///In case of logs it can be `file://<full path>` to specify path to append logs. Otherwise `url` is ignored and `stdout` shall be used
     DatadogAgent,
 }
 
@@ -589,7 +637,13 @@ impl<'a> Builder<'a> {
             Protocol::Grpc => missing_grpc_feature(),
 
             #[cfg(feature = "datadog")]
-            Protocol::DatadogAgent => unsupported_datadog_feature(),
+            Protocol::DatadogAgent => {
+                if let Some(file_path) = self.destination.url.strip_prefix("file://") {
+                    opentelemetry_sdk::logs::BatchLogProcessor::builder(crate::datadog::file_exporter(file_path.to_owned().into())).build()
+                } else {
+                    opentelemetry_sdk::logs::BatchLogProcessor::builder(crate::datadog::stdout_exporter()).build()
+                }
+            }
             #[cfg(not(feature = "datadog"))]
             Protocol::DatadogAgent => missing_datadog_feature(),
 
@@ -614,7 +668,7 @@ impl<'a> Builder<'a> {
             _ => missing_http_feature(),
         };
 
-        #[cfg(any(feature = "grpc", feature = "http"))]
+        #[cfg(any(feature = "grpc", feature = "http", feature = "datadog"))]
         {
             let mut this = self;
             let mut builder = SdkLoggerProvider::builder();

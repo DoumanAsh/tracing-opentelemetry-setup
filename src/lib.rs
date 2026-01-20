@@ -55,12 +55,14 @@
 //! otlp.init_tracing_subscriber("tracing-opentelemetry", registry);
 //!
 //! //Do your job then shutdown to make sure you flush everything
-//! otlp.shutdown(core::time::Duration::ZERO).expect("successfully shut down OTLP")
+//! otlp.shutdown(None).expect("successfully shut down OTLP")
 //!```
 
 #![warn(missing_docs)]
 #![allow(clippy::style)]
 
+#[cfg(feature = "datadog")]
+mod datadog;
 #[cfg(feature = "panic")]
 pub mod panic;
 #[cfg(feature = "propagation")]
