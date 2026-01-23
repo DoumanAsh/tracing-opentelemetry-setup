@@ -43,6 +43,7 @@
 //! use tracing_opentelemetry_setup::builder::{Destination, Protocol, Attributes, TraceSettings};
 //!
 //! use tracing_subscriber::layer::SubscriberExt;
+//! use tracing_subscriber::util::SubscriberInitExt;
 //!
 //! let default_attrs = Attributes::builder().with_attr("service.name", "サービス").finish();
 //! let trace_settings = TraceSettings::new(1.0);
@@ -51,9 +52,10 @@
 //!     url: "http://localhost:45081".into()
 //! };
 //! let mut otlp = Otlp::builder(destination).with_header("Authorization", "Basic <my token>").with_trace(Some(&default_attrs), trace_settings).finish();
-//! let registry = tracing_subscriber::registry().with(tracing_subscriber::filter::LevelFilter::from_level(tracing::Level::INFO));
-//! otlp.init_tracing_subscriber("tracing-opentelemetry", registry);
+//! let registry = tracing_subscriber::registry().with(otlp.create_layer("tracing-opentelemetry".into())) //aggregates sdk providers into single layer
+//!                                              .with(tracing_subscriber::filter::LevelFilter::from_level(tracing::Level::INFO));
 //!
+//! let _guard = registry.set_default();
 //! //Do your job then shutdown to make sure you flush everything
 //! otlp.shutdown(None).expect("successfully shut down OTLP")
 //!```
@@ -73,5 +75,6 @@ pub use tracing;
 pub use tracing_subscriber;
 pub use opentelemetry;
 pub use opentelemetry_sdk;
+pub mod layer;
 pub mod builder;
 pub use builder::Otlp;

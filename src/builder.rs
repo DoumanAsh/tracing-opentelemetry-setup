@@ -7,6 +7,8 @@ use opentelemetry_sdk::error::OTelSdkError;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 
+use crate::layer::OtlpLayer;
+
 #[cfg(feature = "grpc")]
 fn create_metadata_map(headers: &[(String, String)]) -> tonic::metadata::MetadataMap {
     use tonic::metadata::{MetadataMap, MetadataKey};
@@ -237,6 +239,18 @@ impl Otlp {
         }
     }
 
+    ///Creates new layer aggregating underlying SDK providers to instantiate corresponding layer with `name` for trace layer
+    pub fn create_layer<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&self, name: Cow<'static, str>) -> OtlpLayer<S> {
+        use opentelemetry::trace::TracerProvider;
+
+        OtlpLayer {
+            trace: self.trace.as_ref().map(|trace| tracing_opentelemetry::OpenTelemetryLayer::new(trace.tracer(name))),
+            logs: self.logs.as_ref().map(|logs| opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(logs)),
+            #[cfg(feature = "tracing-metrics")]
+            metrics: self.metrics.as_ref().map(|metrics| tracing_opentelemetry::MetricsLayer::new(metrics.clone()))
+        }
+    }
+
     ///Finishes initializing `tracing_subscriber::registry::Registry` with specified `name` used for tracer
     ///
     ///Cannot be called more than once as `tracing` allows only single global instance
@@ -244,46 +258,10 @@ impl Otlp {
     ///If feature `tracing-metrics` is enabled, then it shall record metrics via tracing events.
     ///For details refer to its [docs](https://docs.rs/tracing-opentelemetry/latest/tracing_opentelemetry/struct.MetricsLayer.html)
     pub fn init_tracing_subscriber<R: Sync + Send + tracing::Subscriber + tracing_subscriber::layer::SubscriberExt + tracing_subscriber::util::SubscriberInitExt + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&self, name: impl Into<Cow<'static, str>>, registry: R) {
-        use opentelemetry::trace::TracerProvider;
-        use tracing_subscriber::layer::SubscriberExt;
         use tracing_subscriber::util::SubscriberInitExt;
 
-        #[cfg(feature = "tracing-metrics")]
-        macro_rules! init_metrics {
-            ($registry:expr) => {
-                if let Some(metrics) = self.metrics.as_ref() {
-                    let metrics = tracing_opentelemetry::MetricsLayer::new(metrics.clone());
-                    $registry.with(metrics).init();
-                } else {
-                    $registry.init()
-                }
-            };
-        }
-
-        #[cfg(not(feature = "tracing-metrics"))]
-        macro_rules! init_metrics {
-            ($registry:expr) => {
-                $registry.init()
-            }
-        }
-
-        if let Some(trace) = self.trace.as_ref() {
-            let layer = tracing_opentelemetry::OpenTelemetryLayer::new(trace.tracer(name));
-            let registry = registry.with(layer);
-            if let Some(logs) = self.logs.as_ref() {
-                let layer = opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(logs);
-                let registry = registry.with(layer);
-                init_metrics!(registry)
-            } else {
-                init_metrics!(registry)
-            }
-        } else if let Some(logs) = self.logs.as_ref() {
-            let layer = opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(logs);
-            let registry = registry.with(layer);
-            init_metrics!(registry)
-        } else {
-            init_metrics!(registry)
-        }
+        let layer = self.create_layer(name.into());
+        registry.with(layer).init();
     }
 
     ///Finishes initializing `tracing_subscriber::registry::Registry` with specified `name` used for tracer
@@ -293,48 +271,11 @@ impl Otlp {
     ///If feature `tracing-metrics` is enabled, then it shall record metrics via tracing events.
     ///For details refer to its [docs](https://docs.rs/tracing-opentelemetry/latest/tracing_opentelemetry/struct.MetricsLayer.html)
     pub fn local_init_tracing_subscriber<R: Sync + Send + tracing::Subscriber + tracing_subscriber::layer::SubscriberExt + tracing_subscriber::util::SubscriberInitExt + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&self, name: impl Into<Cow<'static, str>>, registry: R) -> impl Drop {
-        use opentelemetry::trace::TracerProvider;
-        use tracing_subscriber::layer::SubscriberExt;
         use tracing_subscriber::util::SubscriberInitExt;
 
-        #[cfg(feature = "tracing-metrics")]
-        macro_rules! init_metrics {
-            ($registry:expr) => {
-                if let Some(metrics) = self.metrics.as_ref() {
-                    let metrics = tracing_opentelemetry::MetricsLayer::new(metrics.clone());
-                    $registry.with(metrics).set_default();
-                } else {
-                    $registry.set_default()
-                }
-            };
-        }
-
-        #[cfg(not(feature = "tracing-metrics"))]
-        macro_rules! init_metrics {
-            ($registry:expr) => {
-                $registry.set_default()
-            }
-        }
-
-        if let Some(trace) = self.trace.as_ref() {
-            let layer = tracing_opentelemetry::OpenTelemetryLayer::new(trace.tracer(name));
-            let registry = registry.with(layer);
-            if let Some(logs) = self.logs.as_ref() {
-                let layer = opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(logs);
-                let registry = registry.with(layer);
-                init_metrics!(registry)
-            } else {
-                init_metrics!(registry)
-            }
-        } else if let Some(logs) = self.logs.as_ref() {
-            let layer = opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(logs);
-            let registry = registry.with(layer);
-            init_metrics!(registry)
-        } else {
-            init_metrics!(registry)
-        }
+        let layer = self.create_layer(name.into());
+        registry.with(layer).set_default()
     }
-
 }
 
 impl Drop for Otlp {
@@ -357,7 +298,8 @@ pub enum Protocol {
     ///
     ///In case of traces expects valid network address to send data
     ///
-    ///In case of logs it can be `file://<full path>` to specify path to append logs. Otherwise `url` is ignored and `stdout` shall be used
+    ///In case of logs it can be `file://<full path>` to specify path to append logs. Otherwise `url` is ignored and `stdout` shall be used.
+    ///Note that you're advised to disable attachment of events/logs to the span in this case
     DatadogAgent,
 }
 
