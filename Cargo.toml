@@ -7,7 +7,7 @@ description = "Utilities to provide proper setup of tracing with OTEL export"
 readme = "README.md"
 repository = "https://github.com/DoumanAsh/tracing-opentelemetry-setup"
 license = "BSL-1.0"
-keywords = ["tracing", "opentelemetry"]
+keywords = ["tracing", "opentelemetry", "tracing-opentelemetry"]
 include = [
     "**/*.rs",
     "Cargo.toml",

@@ -538,6 +538,8 @@ impl Builder {
 
     #[cfg(feature = "http-ureq")]
     ///Enables usage of simple blocking http client
+    ///
+    ///Requires `http-ureq` feature enabled
     pub fn with_ureq_http_client(mut self) -> Self {
         self.ureq = Some(crate::ureq::HttpClient::new());
         self
@@ -548,7 +550,7 @@ impl Builder {
     ///
     ///Defaults to `true`
     ///
-    ///Has no effect if relevant `*-compression` are enabled
+    ///Has no effect if relevant `*-compression` are _not_ enabled
     pub fn with_compression(mut self, compression: bool) -> Self {
         self.compression = compression;
         self
