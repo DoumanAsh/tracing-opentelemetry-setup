@@ -67,7 +67,7 @@
 #![warn(missing_docs)]
 #![allow(clippy::style)]
 
-#[cfg(feature = "ureq")]
+#[cfg(feature = "http-ureq")]
 mod ureq;
 #[cfg(feature = "datadog")]
 mod datadog;
