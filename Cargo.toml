@@ -1,6 +1,6 @@
 [package]
 name = "tracing-opentelemetry-setup"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2024"
 rust-version = "1.85"
 description = "Utilities to provide proper setup of tracing with OTEL export"
@@ -68,7 +68,8 @@ optional = true
 version = "0.19"
 default-features = false
 optional = true
-features = ["intern-ahash", "reqwest-client"]
+# Only blocking client works with batch processor
+features = ["intern-ahash", "reqwest-blocking-client"]
 
 [dependencies.time]
 version = "0.3"
