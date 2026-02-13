@@ -1,6 +1,6 @@
 [package]
 name = "tracing-opentelemetry-setup"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2024"
 rust-version = "1.85"
 description = "Utilities to provide proper setup of tracing with OTEL export"
@@ -58,6 +58,17 @@ version = "1"
 default-features = false
 optional = true
 
+[dependencies.opentelemetry-http]
+version = "0.31"
+default-features = false
+optional = true
+
+# ureq http client support
+[dependencies.ureq]
+version = "3"
+default-features = false
+optional = true
+
 # Datadog related deps
 [dependencies.serde]
 version = "1"
@@ -112,6 +123,8 @@ http-tls = ["http", "opentelemetry-otlp/reqwest-rustls"]
 http-reqwest-blocking = ["http", "opentelemetry-otlp/reqwest-blocking-client"]
 http-reqwest = ["http", "opentelemetry-otlp/reqwest-client"]
 http-hyper = ["http", "opentelemetry-otlp/hyper-client"]
+http-ureq = ["http", "ureq", "opentelemetry-http"]
+http-ureq-tls = ["http-ureq", "ureq/rustls", "ureq/platform-verifier"]
 
 [package.metadata.docs.rs]
-features = ["metrics", "grpc", "http", "propagation", "panic", "datadog"]
+features = ["metrics", "grpc", "http", "propagation", "panic", "datadog", "http-ureq"]

@@ -34,6 +34,9 @@
 //!- `http-reqwest` - Enables async reqwest client.
 //!- `http-hyper` - Enables hyper client.
 //!
+//!- `http-ureq` - Enables option of using basic `ureq` http client (no dependency on async IO)
+//!- `http-ureq-tls` - Enables TLS support in `ureq` using rustls with platform verifier.
+//!
 //!## Usage
 //!
 //!Make sure `tracing-opentelemetry-setup` is installed to your dependencies
@@ -64,6 +67,8 @@
 #![warn(missing_docs)]
 #![allow(clippy::style)]
 
+#[cfg(feature = "ureq")]
+mod ureq;
 #[cfg(feature = "datadog")]
 mod datadog;
 #[cfg(feature = "panic")]

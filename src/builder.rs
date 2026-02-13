@@ -333,14 +333,6 @@ pub struct Destination<'a> {
     pub attributes: Option<&'a Attributes>
 }
 
-///Opentelemetry integration builder
-pub struct Builder {
-    otlp: Otlp,
-    headers: Vec<(String, String)>,
-    timeout: time::Duration,
-    compression: bool,
-}
-
 macro_rules! declare_trace_limits {
     ({$($name:ident,)+}) => {
         struct SpanLimits {
@@ -520,6 +512,16 @@ impl MetricsSettings {
     }
 }
 
+///Opentelemetry integration builder
+pub struct Builder {
+    otlp: Otlp,
+    headers: Vec<(String, String)>,
+    timeout: time::Duration,
+    compression: bool,
+    #[cfg(feature = "http-ureq")]
+    ureq: Option<crate::ureq::HttpClient>,
+}
+
 impl Builder {
     #[inline]
     ///Starts building Opentelemetry integration
@@ -529,7 +531,16 @@ impl Builder {
             headers: Vec::new(),
             timeout: time::Duration::from_secs(5),
             compression: true,
+            #[cfg(feature = "http-ureq")]
+            ureq: None,
         }
+    }
+
+    #[cfg(feature = "http-ureq")]
+    ///Enables usage of simple blocking http client
+    pub fn with_ureq_http_client(mut self) -> Self {
+        self.ureq = Some(crate::ureq::HttpClient::new());
+        self
     }
 
     #[inline]
@@ -557,6 +568,25 @@ impl Builder {
     pub fn with_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.push((key.into(), value.into()));
         self
+    }
+
+    #[cfg(feature = "http")]
+    fn apply_otel_http_config<T: opentelemetry_otlp::WithHttpConfig>(&self, mut builder: T) -> T {
+        if cfg!(feature = "http-compression") && self.compression {
+            builder = builder.with_compression(opentelemetry_otlp::Compression::Gzip)
+        }
+
+        #[cfg(feature = "http-ureq")]
+        if let Some(ureq) = self.ureq.as_ref() {
+            builder = builder.with_http_client(ureq.clone());
+        }
+
+        if !self.headers.is_empty() {
+            let headers = self.headers.iter().map(|(key, value)| (key.clone(), value.clone())).collect();
+            builder = builder.with_headers(headers);
+        }
+
+        builder
     }
 
     ///Enables `logs` exporter with provided `attrs` annotating logs
@@ -603,18 +633,12 @@ impl Builder {
 
             #[cfg(feature = "http")]
             http => {
-                use opentelemetry_otlp::{WithHttpConfig, WithExportConfig};
+                use opentelemetry_otlp::WithExportConfig;
                 let url = format!("{}/logs", _destination.url.trim_end_matches('/'));
                 let mut builder = opentelemetry_otlp::LogExporter::builder().with_http().with_protocol(http.into_otel()).with_endpoint(url);
 
-                if cfg!(feature = "http-compression") && self.compression {
-                    builder = builder.with_compression(opentelemetry_otlp::Compression::Gzip)
-                }
+                builder = self.apply_otel_http_config(builder);
 
-                if !self.headers.is_empty() {
-                    let headers = self.headers.iter().map(|(key, value)| (key.clone(), value.clone())).collect();
-                    builder = builder.with_headers(headers);
-                }
                 let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize logs http exporter");
                 opentelemetry_sdk::logs::BatchLogProcessor::builder(exporter).build()
             },
@@ -683,6 +707,11 @@ impl Builder {
                     }
                 }
 
+                #[cfg(feature = "http-ureq")]
+                if let Some(ureq) = self.ureq.as_ref() {
+                    exporter = exporter.with_http_client(ureq.clone());
+                }
+
                 let exporter = exporter.build_exporter().expect("Failed to initialize datadog exporter");
                 opentelemetry_sdk::trace::BatchSpanProcessor::new(exporter, _batch_config)
             },
@@ -691,18 +720,11 @@ impl Builder {
 
             #[cfg(feature = "http")]
             http => {
-                use opentelemetry_otlp::{WithHttpConfig, WithExportConfig};
+                use opentelemetry_otlp::WithExportConfig;
                 let url = format!("{}/traces", _destination.url.trim_end_matches('/'));
                 let mut builder = opentelemetry_otlp::SpanExporter::builder().with_http().with_protocol(http.into_otel()).with_endpoint(url);
 
-                if cfg!(feature = "http-compression") && self.compression {
-                    builder = builder.with_compression(opentelemetry_otlp::Compression::Gzip)
-                }
-
-                if !self.headers.is_empty() {
-                    let headers = self.headers.iter().map(|(key, value)| (key.clone(), value.clone())).collect();
-                    builder = builder.with_headers(headers);
-                }
+                builder = self.apply_otel_http_config(builder);
                 let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize trace http exporter");
                 opentelemetry_sdk::trace::BatchSpanProcessor::new(exporter, _batch_config)
             },
@@ -775,18 +797,12 @@ impl Builder {
 
             #[cfg(feature = "http")]
             http => {
-                use opentelemetry_otlp::{WithHttpConfig, WithExportConfig};
+                use opentelemetry_otlp::WithExportConfig;
                 let url = format!("{}/metrics", _destination.url.trim_end_matches('/'));
                 let mut builder = opentelemetry_otlp::MetricExporter::builder().with_http().with_protocol(http.into_otel()).with_endpoint(url).with_temporality(_settings.temporality);
 
-                if cfg!(feature = "http-compression") && self.compression {
-                    builder = builder.with_compression(opentelemetry_otlp::Compression::Gzip)
-                }
+                builder = self.apply_otel_http_config(builder);
 
-                if !self.headers.is_empty() {
-                    let headers = self.headers.iter().map(|(key, value)| (key.clone(), value.clone())).collect();
-                    builder = builder.with_headers(headers);
-                }
                 builder.with_timeout(self.timeout).build().expect("Failed to initialize metrics http exporter")
             },
             #[cfg(not(feature = "http"))]

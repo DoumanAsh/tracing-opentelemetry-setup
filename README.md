@@ -3,7 +3,7 @@
 [![Rust](https://github.com/DoumanAsh/tracing-opentelemetry-setup/actions/workflows/rust.yml/badge.svg)](https://github.com/DoumanAsh/tracing-opentelemetry-setup/actions/workflows/rust.yml)
 [![Crates.io](https://img.shields.io/crates/v/tracing-opentelemetry-setup.svg)](https://crates.io/crates/tracing-opentelemetry-setup)
 [![Documentation](https://docs.rs/tracing-opentelemetry-setup/badge.svg)](https://docs.rs/crate/tracing-opentelemetry-setup/)
-[![dependency status](https://deps.rs/crate/tracing-opentelemetry-setup/0.6.2/status.svg)](https://deps.rs/crate/tracing-opentelemetry-setup/0.6.2)
+[![dependency status](https://deps.rs/crate/tracing-opentelemetry-setup/0.6.3/status.svg)](https://deps.rs/crate/tracing-opentelemetry-setup/0.6.3)
 
 OpenTelemetry integration for tracing.
 
@@ -40,6 +40,9 @@ Note that when enabling multiple clients, only one client will be used by defaul
 - `http-reqwest-blocking` - Enables blocking reqwest client.
 - `http-reqwest` - Enables async reqwest client.
 - `http-hyper` - Enables hyper client.
+
+- `http-ureq` - Enables option of using basic `ureq` http client (no dependency on async IO)
+- `http-ureq-tls` - Enables TLS support in `ureq` using rustls with platform verifier.
 
 ## Usage
 
