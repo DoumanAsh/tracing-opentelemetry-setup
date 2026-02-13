@@ -205,7 +205,16 @@ impl<'a> serde::Serialize for LogRecord<'a> {
                 } else if *key == SERVICE_VERSION {
                     map.serialize_entry("version", &ValueSerde(value))?;
                 } else {
-                    map.serialize_entry(key.as_str(), &ValueSerde(value))?;
+                    let key = buffer.as_str_with(|buffer| {
+                        buffer.push_bytes(b"fields.");
+                        buffer.push_bytes(key.as_str().as_bytes());
+                        true
+                    });
+
+                    if let Some(key) = key {
+                        map.serialize_entry(key, &ValueSerde(value))?;
+                    }
+                    buffer.clear();
                 }
             }
         }

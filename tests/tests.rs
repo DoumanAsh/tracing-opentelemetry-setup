@@ -23,7 +23,7 @@ pub fn should_export_datadog_agent_logs() {
     let file = CleanupFile(OUTPUT_FILE);
     file.clean();
 
-    let attrs = tracing_opentelemetry_setup::builder::Attributes::builder().with_attr("service.name", "datadog_agent_test").finish();
+    let attrs = tracing_opentelemetry_setup::builder::Attributes::builder().with_attr("service.name", "datadog_agent_test").with_attr("smarty", "pants").with_attr("and", "another one").finish();
     let destination = tracing_opentelemetry_setup::builder::Destination {
         url: "file://datadog_agent.log".into(),
         protocol: tracing_opentelemetry_setup::builder::Protocol::DatadogAgent,
@@ -38,10 +38,13 @@ pub fn should_export_datadog_agent_logs() {
     otlp.shutdown(None).expect("success");
 
     let result: serde_json::Value = serde_json::from_reader(std::fs::File::open(OUTPUT_FILE).unwrap()).expect("to read file");
+    println!("result={:#?}", result);
     assert_eq!(result["level"], "INFO");
     assert_eq!(result["message"], "my message");
     assert_eq!(result["service"], "datadog_agent_test");
+    assert_eq!(result["fields.smarty"], "pants");
     assert_eq!(result["fields.data"], 1);
+    assert_eq!(result["fields.and"], "another one");
     let timestamp = result["timestamp"].as_str().expect("to have timestamp field");
     assert!(timestamp.ends_with("Z"));
     assert!(timestamp.starts_with("20"));
