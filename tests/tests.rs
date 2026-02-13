@@ -27,8 +27,9 @@ pub fn should_export_datadog_agent_logs() {
     let destination = tracing_opentelemetry_setup::builder::Destination {
         url: "file://datadog_agent.log".into(),
         protocol: tracing_opentelemetry_setup::builder::Protocol::DatadogAgent,
+        attributes: Some(&attrs),
     };
-    let mut otlp = tracing_opentelemetry_setup::builder::Otlp::builder(destination).with_logs(Some(&attrs)).finish();
+    let mut otlp = tracing_opentelemetry_setup::builder::Otlp::builder().with_logs(&destination).finish();
     let _guard = otlp.local_init_tracing_subscriber("datadog_agent", tracing_subscriber::registry());
 
     tracing::info!(data=1, "my message");

@@ -49,9 +49,10 @@
 //! let trace_settings = TraceSettings::new(1.0);
 //! let destination = Destination {
 //!     protocol: Protocol::HttpBinary,
-//!     url: "http://localhost:45081".into()
+//!     url: "http://localhost:45081".into(),
+//!     attributes: Some(&default_attrs),
 //! };
-//! let mut otlp = Otlp::builder(destination).with_header("Authorization", "Basic <my token>").with_trace(Some(&default_attrs), trace_settings).finish();
+//! let mut otlp = Otlp::builder().with_header("Authorization", "Basic <my token>").with_trace(&destination, trace_settings).finish();
 //! let registry = tracing_subscriber::registry().with(otlp.create_layer("tracing-opentelemetry".into())) //aggregates sdk providers into single layer
 //!                                              .with(tracing_subscriber::filter::LevelFilter::from_level(tracing::Level::INFO));
 //!

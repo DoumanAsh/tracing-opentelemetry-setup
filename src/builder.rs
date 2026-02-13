@@ -178,8 +178,8 @@ impl Otlp {
 
     #[inline]
     ///Starts building Opentelemetry integration
-    pub const fn builder(destination: Destination<'_>) -> Builder<'_> {
-        Builder::new(destination)
+    pub const fn builder() -> Builder {
+        Builder::new()
     }
 
     ///Performs shutdown, limiting it to `limit` for individual components
@@ -323,13 +323,18 @@ pub struct Destination<'a> {
     pub protocol: Protocol,
     ///destination URL
     ///
-    ///When `Http*` protocol is used, assumes `<url>/metrics` | `<url>/logs` | `<url>/traces` to be available
+    ///When `Http*` protocol is used, destination url shall be constructed as `<url>/metrics` | `<url>/logs` | `<url>/traces`
     pub url: Cow<'a, str>,
+    ///Common attributes to deliver to the destination
+    ///
+    ///It is good practise to include following at least:
+    ///- `service.name`
+    ///- `service.version`
+    pub attributes: Option<&'a Attributes>
 }
 
 ///Opentelemetry integration builder
-pub struct Builder<'a> {
-    destination: Destination<'a>,
+pub struct Builder {
     otlp: Otlp,
     headers: Vec<(String, String)>,
     timeout: time::Duration,
@@ -515,12 +520,11 @@ impl MetricsSettings {
     }
 }
 
-impl<'a> Builder<'a> {
+impl Builder {
     #[inline]
     ///Starts building Opentelemetry integration
-    pub const fn new(destination: Destination<'a>) -> Self {
+    pub const fn new() -> Self {
         Self {
-            destination,
             otlp: Otlp::new(),
             headers: Vec::new(),
             timeout: time::Duration::from_secs(5),
@@ -558,16 +562,16 @@ impl<'a> Builder<'a> {
     ///Enables `logs` exporter with provided `attrs` annotating logs
     ///
     ///Panics if called more than once
-    pub fn with_logs(self, _attrs: Option<&Attributes>) -> Self {
+    pub fn with_logs(self, _destination: &Destination<'_>) -> Self {
         if self.otlp.logs.is_some() {
             panic!("Logs is already initialized")
         }
 
-        let _exporter = match self.destination.protocol {
+        let _exporter = match _destination.protocol {
             #[cfg(feature = "grpc")]
             Protocol::Grpc => {
                 use opentelemetry_otlp::{WithTonicConfig, WithExportConfig};
-                let mut builder = opentelemetry_otlp::LogExporter::builder().with_tonic().with_endpoint(self.destination.url.clone().into_owned());
+                let mut builder = opentelemetry_otlp::LogExporter::builder().with_tonic().with_endpoint(_destination.url.clone().into_owned());
 
                 if cfg!(feature = "grpc-compression") && self.compression {
                     builder = builder.with_compression(opentelemetry_otlp::Compression::Gzip)
@@ -587,7 +591,7 @@ impl<'a> Builder<'a> {
 
             #[cfg(feature = "datadog")]
             Protocol::DatadogAgent => {
-                if let Some(file_path) = self.destination.url.strip_prefix("file://") {
+                if let Some(file_path) = _destination.url.strip_prefix("file://") {
                     opentelemetry_sdk::logs::BatchLogProcessor::builder(crate::datadog::file_exporter(file_path.to_owned().into())).build()
                 } else {
                     opentelemetry_sdk::logs::BatchLogProcessor::builder(crate::datadog::stdout_exporter()).build()
@@ -599,7 +603,7 @@ impl<'a> Builder<'a> {
             #[cfg(feature = "http")]
             http => {
                 use opentelemetry_otlp::{WithHttpConfig, WithExportConfig};
-                let url = format!("{}/logs", self.destination.url.trim_end_matches('/'));
+                let url = format!("{}/logs", _destination.url.trim_end_matches('/'));
                 let mut builder = opentelemetry_otlp::LogExporter::builder().with_http().with_protocol(http.into_otel()).with_endpoint(url);
 
                 if cfg!(feature = "http-compression") && self.compression {
@@ -621,7 +625,7 @@ impl<'a> Builder<'a> {
         {
             let mut this = self;
             let mut builder = SdkLoggerProvider::builder();
-            if let Some(attrs) = _attrs {
+            if let Some(attrs) = _destination.attributes {
                 builder = builder.with_resource(attrs.0.clone());
             }
 
@@ -633,17 +637,17 @@ impl<'a> Builder<'a> {
     ///Enables `trace` exporter with provided `attrs` annotating traces
     ///
     ///Panics if called more than once
-    pub fn with_trace(self, _attrs: Option<&Attributes>, _settings: TraceSettings) -> Self {
+    pub fn with_trace(self, _destination: &Destination<'_>, _settings: TraceSettings) -> Self {
         if self.otlp.trace.is_some() {
             panic!("Trace is already initialized")
         }
 
         let _batch_config = opentelemetry_sdk::trace::BatchConfigBuilder::default().build();
-        let _exporter = match self.destination.protocol {
+        let _exporter = match _destination.protocol {
             #[cfg(feature = "grpc")]
             Protocol::Grpc => {
                 use opentelemetry_otlp::{WithTonicConfig, WithExportConfig};
-                let mut builder = opentelemetry_otlp::SpanExporter::builder().with_tonic().with_endpoint(self.destination.url.clone().into_owned());
+                let mut builder = opentelemetry_otlp::SpanExporter::builder().with_tonic().with_endpoint(_destination.url.clone().into_owned());
 
                 if cfg!(feature = "grpc-compression") && self.compression {
                     builder = builder.with_compression(opentelemetry_otlp::Compression::Gzip)
@@ -663,7 +667,24 @@ impl<'a> Builder<'a> {
 
             #[cfg(feature = "datadog")]
             Protocol::DatadogAgent => {
-                let exporter = opentelemetry_datadog::new_pipeline().with_agent_endpoint(self.destination.url.clone()).build_exporter().expect("Failed to initialize datadog exporter");
+                const SERVICE_NAME: opentelemetry::Key = opentelemetry::Key::from_static_str("service.name");
+                const SERVICE_VERSION: opentelemetry::Key = opentelemetry::Key::from_static_str("service.version");
+                const SERVICE_ENV: opentelemetry::Key = opentelemetry::Key::from_static_str("deployment.environment.name");
+                let mut exporter = opentelemetry_datadog::new_pipeline().with_agent_endpoint(_destination.url.clone());
+
+                if let Some(attrs) = _destination.attributes {
+                    if let Some(service_name) = attrs.0.get(&SERVICE_NAME) {
+                        exporter = exporter.with_service_name(service_name.to_string());
+                    }
+                    if let Some(service_version) = attrs.0.get(&SERVICE_VERSION) {
+                        exporter = exporter.with_version(service_version.to_string());
+                    }
+                    if let Some(service_env) = attrs.0.get(&SERVICE_ENV) {
+                        exporter = exporter.with_env(service_env.to_string());
+                    }
+                }
+
+                let exporter = exporter.build_exporter().expect("Failed to initialize datadog exporter");
                 opentelemetry_sdk::trace::BatchSpanProcessor::new(exporter, _batch_config)
             },
             #[cfg(not(feature = "datadog"))]
@@ -672,7 +693,7 @@ impl<'a> Builder<'a> {
             #[cfg(feature = "http")]
             http => {
                 use opentelemetry_otlp::{WithHttpConfig, WithExportConfig};
-                let url = format!("{}/traces", self.destination.url.trim_end_matches('/'));
+                let url = format!("{}/traces", _destination.url.trim_end_matches('/'));
                 let mut builder = opentelemetry_otlp::SpanExporter::builder().with_http().with_protocol(http.into_otel()).with_endpoint(url);
 
                 if cfg!(feature = "http-compression") && self.compression {
@@ -709,7 +730,7 @@ impl<'a> Builder<'a> {
                 }
             }
             builder = _settings.limits.apply_to(builder);
-            if let Some(attrs) = _attrs {
+            if let Some(attrs) = _destination.attributes {
                 builder = builder.with_resource(attrs.0.clone());
             }
 
@@ -722,16 +743,16 @@ impl<'a> Builder<'a> {
     ///Enables `metrics` exporter with provided `attrs` annotating metrics
     ///
     ///Panics if called more than once
-    pub fn with_metrics(self, _attrs: Option<&Attributes>, _settings: MetricsSettings) -> Self {
+    pub fn with_metrics(self, _destination: &Destination<'_>, _settings: MetricsSettings) -> Self {
         if self.otlp.metrics.is_some() {
             panic!("Trace is already initialized")
         }
 
-        let _exporter = match self.destination.protocol {
+        let _exporter = match _destination.protocol {
             #[cfg(feature = "grpc")]
             Protocol::Grpc => {
                 use opentelemetry_otlp::{WithTonicConfig, WithExportConfig};
-                let mut builder = opentelemetry_otlp::MetricExporter::builder().with_tonic().with_endpoint(self.destination.url.clone().into_owned()).with_temporality(_settings.temporality);
+                let mut builder = opentelemetry_otlp::MetricExporter::builder().with_tonic().with_endpoint(_destination.url.clone().into_owned()).with_temporality(_settings.temporality);
 
                 if cfg!(feature = "grpc-compression") && self.compression {
                     builder = builder.with_compression(opentelemetry_otlp::Compression::Gzip)
@@ -756,7 +777,7 @@ impl<'a> Builder<'a> {
             #[cfg(feature = "http")]
             http => {
                 use opentelemetry_otlp::{WithHttpConfig, WithExportConfig};
-                let url = format!("{}/metrics", self.destination.url.trim_end_matches('/'));
+                let url = format!("{}/metrics", _destination.url.trim_end_matches('/'));
                 let mut builder = opentelemetry_otlp::MetricExporter::builder().with_http().with_protocol(http.into_otel()).with_endpoint(url).with_temporality(_settings.temporality);
 
                 if cfg!(feature = "http-compression") && self.compression {
@@ -777,7 +798,7 @@ impl<'a> Builder<'a> {
         {
             let mut this = self;
             let mut builder = opentelemetry_sdk::metrics::SdkMeterProvider::builder();
-            if let Some(attrs) = _attrs {
+            if let Some(attrs) = _destination.attributes {
                 builder = builder.with_resource(attrs.0.clone());
             }
 
