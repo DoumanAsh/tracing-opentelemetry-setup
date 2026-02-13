@@ -40,6 +40,7 @@ pub fn should_export_datadog_agent_logs() {
     let result: serde_json::Value = serde_json::from_reader(std::fs::File::open(OUTPUT_FILE).unwrap()).expect("to read file");
     assert_eq!(result["level"], "INFO");
     assert_eq!(result["message"], "my message");
+    assert_eq!(result["service"], "datadog_agent_test");
     assert_eq!(result["fields.data"], 1);
     let timestamp = result["timestamp"].as_str().expect("to have timestamp field");
     assert!(timestamp.ends_with("Z"));

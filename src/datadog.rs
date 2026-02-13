@@ -7,6 +7,70 @@ use opentelemetry_sdk::logs::LogBatch;
 use opentelemetry_sdk::error::{OTelSdkError, OTelSdkResult};
 use serde::ser::{SerializeSeq, SerializeMap};
 
+use crate::builder::Attributes;
+pub const SERVICE_NAME: opentelemetry::Key = opentelemetry::Key::from_static_str("service.name");
+pub const SERVICE_VERSION: opentelemetry::Key = opentelemetry::Key::from_static_str("service.version");
+pub const SERVICE_ENV: opentelemetry::Key = opentelemetry::Key::from_static_str("deployment.environment.name");
+
+struct ValueSerde<'a>(&'a opentelemetry::Value);
+
+
+impl serde::Serialize for ValueSerde<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use opentelemetry::Value;
+        use opentelemetry::Array;
+
+        #[cold]
+        #[inline(never)]
+        fn unexpected_value<E: serde::ser::Error>(unexpected: &Value) -> E {
+            E::custom(format_args!("Unsupported value: {:?}", unexpected))
+        }
+
+        #[cold]
+        #[inline(never)]
+        fn unexpected_array<E: serde::ser::Error>(unexpected: &Array) -> E {
+            E::custom(format_args!("Unsupported array value: {:?}", unexpected))
+        }
+
+        match self.0 {
+            Value::Bool(value) => serializer.serialize_bool(*value),
+            Value::I64(value) => serializer.serialize_i64(*value),
+            Value::F64(value) => serializer.serialize_f64(*value),
+            Value::String(value) => serializer.serialize_str(value.as_str()),
+            Value::Array(Array::Bool(value)) => {
+                let mut seq = serializer.serialize_seq(Some(value.len()))?;
+                for value in value {
+                    seq.serialize_element(value)?;
+                }
+                seq.end()
+            },
+            Value::Array(Array::I64(value)) => {
+                let mut seq = serializer.serialize_seq(Some(value.len()))?;
+                for value in value {
+                    seq.serialize_element(value)?;
+                }
+                seq.end()
+            },
+            Value::Array(Array::F64(value)) => {
+                let mut seq = serializer.serialize_seq(Some(value.len()))?;
+                for value in value {
+                    seq.serialize_element(value)?;
+                }
+                seq.end()
+            }
+            Value::Array(Array::String(value)) => {
+                let mut seq = serializer.serialize_seq(Some(value.len()))?;
+                for value in value {
+                    seq.serialize_element(value.as_str())?;
+                }
+                seq.end()
+            }
+            Value::Array(value) => Err(unexpected_array(value)),
+            value => Err(unexpected_value(value)),
+        }
+    }
+}
+
 struct AnyValueSerde<'a>(&'a opentelemetry::logs::AnyValue);
 
 impl serde::Serialize for AnyValueSerde<'_> {
@@ -99,18 +163,20 @@ impl io::Write for Buffer {
     }
 }
 
-#[repr(transparent)]
-struct LogRecord<'a>(&'a opentelemetry_sdk::logs::SdkLogRecord);
+struct LogRecord<'a> {
+    record: &'a opentelemetry_sdk::logs::SdkLogRecord,
+    attrs: &'a Option<Attributes>,
+}
 
 impl<'a> serde::Serialize for LogRecord<'a> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut buffer = Buffer::new();
         let mut map = serializer.serialize_map(None)?;
-        if let Some(message) = self.0.body() {
+        if let Some(message) = self.record.body() {
             map.serialize_entry("message", &AnyValueSerde(message))?;
         }
 
-        if let Some(timestamp) = self.0.timestamp().or_else(|| self.0.observed_timestamp()) {
+        if let Some(timestamp) = self.record.timestamp().or_else(|| self.record.observed_timestamp()) {
             let timestamp: time::UtcDateTime = timestamp.into();
             let timestamp = buffer.as_str_with(|buffer| timestamp.format_into(buffer, &time::format_description::well_known::Rfc3339).is_ok());
             if let Some(timestamp) = timestamp  {
@@ -119,18 +185,31 @@ impl<'a> serde::Serialize for LogRecord<'a> {
             buffer.clear();
         }
 
-        if let Some(severity_text) = self.0.severity_text() {
+        if let Some(severity_text) = self.record.severity_text() {
             map.serialize_entry("level", severity_text)?;
         }
 
-        if let Some(ctx) = &self.0.trace_context() {
+        if let Some(ctx) = &self.record.trace_context() {
             //Imagine not giving proper accessor to inner value...
             let trace_id = u128::from_be_bytes(ctx.trace_id.to_bytes());
             let span_id = u64::from_be_bytes(ctx.span_id.to_bytes());
             map.serialize_entry("dd.trace_id", &trace_id)?;
             map.serialize_entry("dd.span_id", &span_id)?;
         }
-        for (key, value) in self.0.attributes_iter() {
+        if let Some(attrs) = self.attrs {
+            for (key, value) in attrs.0.iter() {
+                if *key == SERVICE_NAME {
+                    map.serialize_entry("service", &ValueSerde(value))?;
+                } else if *key == SERVICE_ENV {
+                    map.serialize_entry("env", &ValueSerde(value))?;
+                } else if *key == SERVICE_VERSION {
+                    map.serialize_entry("version", &ValueSerde(value))?;
+                } else {
+                    map.serialize_entry(key.as_str(), &ValueSerde(value))?;
+                }
+            }
+        }
+        for (key, value) in self.record.attributes_iter() {
             let key = buffer.as_str_with(|buffer| {
                 buffer.push_bytes(b"fields.");
                 buffer.push_bytes(key.as_str().as_bytes());
@@ -147,6 +226,7 @@ impl<'a> serde::Serialize for LogRecord<'a> {
 
 pub struct IoLogExporter<IO> {
     create_dest: IO,
+    attrs: Option<Attributes>,
     is_shutdown: atomic::AtomicBool
 }
 
@@ -155,8 +235,15 @@ impl<O: io::Write, IO: Fn() -> io::Result<O> + Sync + Send + 'static> IoLogExpor
     pub fn new(create_dest: IO) -> Self {
         Self {
             create_dest,
+            attrs: None,
             is_shutdown: atomic::AtomicBool::new(false),
         }
+    }
+
+    #[inline(always)]
+    pub fn with_attrs(mut self, attrs: Option<Attributes>) -> Self {
+        self.attrs = attrs;
+        self
     }
 }
 
@@ -172,7 +259,10 @@ impl<O: io::Write, IO: Fn() -> io::Result<O> + Sync + Send + 'static> openteleme
             Err(error) => return Err(opentelemetry_sdk::error::OTelSdkError::InternalFailure(error.to_string())),
         };
         for (record, _) in batch.iter() {
-            let record = LogRecord(record);
+            let record = LogRecord {
+                record,
+                attrs: &self.attrs,
+            };
             if let Err(error) = serde_json::to_writer(&mut out, &record) {
                 return Err(opentelemetry_sdk::error::OTelSdkError::InternalFailure(error.to_string()))
             }

@@ -62,7 +62,7 @@ fn missing_http_feature() -> ! {
 ///Opentelemetry attributes that can be put to be exported along side all records
 #[derive(Clone)]
 #[repr(transparent)]
-pub struct Attributes(opentelemetry_sdk::Resource);
+pub struct Attributes(pub(crate) opentelemetry_sdk::Resource);
 
 impl Attributes {
     #[inline]
@@ -591,10 +591,11 @@ impl Builder {
 
             #[cfg(feature = "datadog")]
             Protocol::DatadogAgent => {
+                let attributes = _destination.attributes.cloned();
                 if let Some(file_path) = _destination.url.strip_prefix("file://") {
-                    opentelemetry_sdk::logs::BatchLogProcessor::builder(crate::datadog::file_exporter(file_path.to_owned().into())).build()
+                    opentelemetry_sdk::logs::BatchLogProcessor::builder(crate::datadog::file_exporter(file_path.to_owned().into()).with_attrs(attributes)).build()
                 } else {
-                    opentelemetry_sdk::logs::BatchLogProcessor::builder(crate::datadog::stdout_exporter()).build()
+                    opentelemetry_sdk::logs::BatchLogProcessor::builder(crate::datadog::stdout_exporter().with_attrs(attributes)).build()
                 }
             }
             #[cfg(not(feature = "datadog"))]
@@ -667,9 +668,7 @@ impl Builder {
 
             #[cfg(feature = "datadog")]
             Protocol::DatadogAgent => {
-                const SERVICE_NAME: opentelemetry::Key = opentelemetry::Key::from_static_str("service.name");
-                const SERVICE_VERSION: opentelemetry::Key = opentelemetry::Key::from_static_str("service.version");
-                const SERVICE_ENV: opentelemetry::Key = opentelemetry::Key::from_static_str("deployment.environment.name");
+                use crate::datadog::{SERVICE_NAME, SERVICE_VERSION, SERVICE_ENV};
                 let mut exporter = opentelemetry_datadog::new_pipeline().with_agent_endpoint(_destination.url.clone());
 
                 if let Some(attrs) = _destination.attributes {
