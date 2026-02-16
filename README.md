@@ -3,7 +3,7 @@
 [![Rust](https://github.com/DoumanAsh/tracing-opentelemetry-setup/actions/workflows/rust.yml/badge.svg)](https://github.com/DoumanAsh/tracing-opentelemetry-setup/actions/workflows/rust.yml)
 [![Crates.io](https://img.shields.io/crates/v/tracing-opentelemetry-setup.svg)](https://crates.io/crates/tracing-opentelemetry-setup)
 [![Documentation](https://docs.rs/tracing-opentelemetry-setup/badge.svg)](https://docs.rs/crate/tracing-opentelemetry-setup/)
-[![dependency status](https://deps.rs/crate/tracing-opentelemetry-setup/0.6.4/status.svg)](https://deps.rs/crate/tracing-opentelemetry-setup/0.6.4)
+[![dependency status](https://deps.rs/crate/tracing-opentelemetry-setup/0.7.0/status.svg)](https://deps.rs/crate/tracing-opentelemetry-setup/0.7.0)
 
 OpenTelemetry integration for tracing.
 
@@ -49,24 +49,29 @@ Note that when enabling multiple clients, only one client will be used by defaul
 Make sure `tracing-opentelemetry-setup` is installed to your dependencies
 
 ```rust
- use tracing_opentelemetry_setup::{Otlp, tracing_subscriber, tracing};
- use tracing_opentelemetry_setup::builder::{Destination, Protocol, Attributes, TraceSettings};
+use tracing_opentelemetry_setup::{Otlp, tracing_subscriber, tracing};
+use tracing_opentelemetry_setup::builder::{Destination, Protocol, Attributes, TraceSettings};                                           ```
 
- use tracing_subscriber::layer::SubscriberExt;
- use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
- let default_attrs = Attributes::builder().with_attr("service.name", "サービス").finish();
- let trace_settings = TraceSettings::new(1.0);
- let destination = Destination {
-     protocol: Protocol::HttpBinary,
-     url: "http://localhost:45081".into(),
-     attributes: Some(&default_attrs),
- };
- let mut otlp = Otlp::builder().with_header("Authorization", "Basic <my token>").with_trace(&destination, trace_settings).finish();
- let registry = tracing_subscriber::registry().with(otlp.create_layer("tracing-opentelemetry".into())) //aggregates sdk providers into single layer
-                                              .with(tracing_subscriber::filter::LevelFilter::from_level(tracing::Level::INFO));
+let default_attrs = Attributes::builder().with_attr("service.name", "サービス").finish();
+let trace_settings = TraceSettings::new("tracing-opentelemetry".into(), 1.0);
+let destination = Destination {
+    protocol: Protocol::HttpBinary,
+    url: "http://localhost:45081".into(),
+    attributes: Some(&default_attrs),
+};
 
- let _guard = registry.set_default();
- //Do your job then shutdown to make sure you flush everything
- otlp.shutdown(None).expect("successfully shut down OTLP")
-```
+//Create common OTLP settings
+let mut otlp = Otlp::builder().with_header("Authorization", "Basic <my token>");
+//Initialize subscriber
+let registry = tracing_subscriber::registry().with(otlp.with_trace(&destination, trace_settings)) //initializes tracing and return layer
+                                             .with(otlp.with_logs(&destination)) //initializes logging and returns layer
+                                             .with(tracing_subscriber::filter::LevelFilter::from_level(tracing::Level::INFO));
+//Finalizes OTLP returning guard
+let mut otlp = otlp.finish();
+
+let _guard = registry.set_default();
+//Do your job then shutdown to make sure you flush everything
+otlp.shutdown(None).expect("successfully shut down OTLP")

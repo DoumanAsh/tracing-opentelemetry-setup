@@ -7,8 +7,6 @@ use opentelemetry_sdk::error::OTelSdkError;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 
-use crate::layer::OtlpLayer;
-
 #[cfg(feature = "grpc")]
 fn create_metadata_map(headers: &[(String, String)]) -> tonic::metadata::MetadataMap {
     use tonic::metadata::{MetadataMap, MetadataKey};
@@ -31,7 +29,7 @@ fn create_metadata_map(headers: &[(String, String)]) -> tonic::metadata::Metadat
     result
 }
 
-#[cfg(all(feature = "datadog", feature = "metrics"))]
+#[cfg(all(feature = "datadog", any(feature = "metrics", feature = "tracing-metrics")))]
 #[cold]
 #[inline(never)]
 fn unsupported_datadog_feature() -> ! {
@@ -221,61 +219,6 @@ impl Otlp {
             Ok(())
         }
     }
-
-    #[cfg(feature = "metrics")]
-    ///Initializes [metrics](https://crates.io/crates/metrics) global recorder if metrics SDK is set up
-    ///
-    ///Requires `metrics` feature
-    ///
-    ///This function can only run once, subsequent calls will have no effect
-    pub fn init_metrics_recorder(&self, name: &'static str) {
-        use crate::opentelemetry::metrics::MeterProvider;
-
-        if let Some(metrics) = self.metrics.as_ref() {
-            let meter = metrics.meter(name);
-            let metrics = metrics_opentelemetry::OpenTelemetryMetrics::new(meter);
-            let recorder = metrics_opentelemetry::OpenTelemetryRecorder::new(metrics);
-            let _ = crate::metrics::set_global_recorder(recorder);
-        }
-    }
-
-    ///Creates new layer aggregating underlying SDK providers to instantiate corresponding layer with `name` for trace layer
-    pub fn create_layer<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&self, name: Cow<'static, str>) -> OtlpLayer<S> {
-        use opentelemetry::trace::TracerProvider;
-
-        OtlpLayer {
-            trace: self.trace.as_ref().map(|trace| tracing_opentelemetry::OpenTelemetryLayer::new(trace.tracer(name))),
-            logs: self.logs.as_ref().map(|logs| opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(logs)),
-            #[cfg(feature = "tracing-metrics")]
-            metrics: self.metrics.as_ref().map(|metrics| tracing_opentelemetry::MetricsLayer::new(metrics.clone()))
-        }
-    }
-
-    ///Finishes initializing `tracing_subscriber::registry::Registry` with specified `name` used for tracer
-    ///
-    ///Cannot be called more than once as `tracing` allows only single global instance
-    ///
-    ///If feature `tracing-metrics` is enabled, then it shall record metrics via tracing events.
-    ///For details refer to its [docs](https://docs.rs/tracing-opentelemetry/latest/tracing_opentelemetry/struct.MetricsLayer.html)
-    pub fn init_tracing_subscriber<R: Sync + Send + tracing::Subscriber + tracing_subscriber::layer::SubscriberExt + tracing_subscriber::util::SubscriberInitExt + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&self, name: impl Into<Cow<'static, str>>, registry: R) {
-        use tracing_subscriber::util::SubscriberInitExt;
-
-        let layer = self.create_layer(name.into());
-        registry.with(layer).init();
-    }
-
-    ///Finishes initializing `tracing_subscriber::registry::Registry` with specified `name` used for tracer
-    ///
-    ///Cannot be called more than once as `tracing` allows only single global instance
-    ///
-    ///If feature `tracing-metrics` is enabled, then it shall record metrics via tracing events.
-    ///For details refer to its [docs](https://docs.rs/tracing-opentelemetry/latest/tracing_opentelemetry/struct.MetricsLayer.html)
-    pub fn local_init_tracing_subscriber<R: Sync + Send + tracing::Subscriber + tracing_subscriber::layer::SubscriberExt + tracing_subscriber::util::SubscriberInitExt + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&self, name: impl Into<Cow<'static, str>>, registry: R) -> impl Drop {
-        use tracing_subscriber::util::SubscriberInitExt;
-
-        let layer = self.create_layer(name.into());
-        registry.with(layer).set_default()
-    }
 }
 
 impl Drop for Otlp {
@@ -418,6 +361,8 @@ impl opentelemetry_sdk::trace::ShouldSample for AlwaysOffSampler {
 ///Trace configuration
 pub struct TraceSettings {
     #[allow(unused)]
+    name: Cow<'static, str>,
+    #[allow(unused)]
     ///Sample ratio to apply to all traces (unless parent overrides it)
     sample_rate: f64,
     #[allow(unused)]
@@ -433,9 +378,10 @@ macro_rules! set_trace_limit {
 }
 
 impl TraceSettings {
-    ///Creates new instance with provided `sample_rate`
-    pub const fn new(sample_rate: f64) -> Self {
+    ///Creates new instance with provided `sample_rate` with provided `name` for tracer SDK
+    pub const fn new(name: Cow<'static, str>, sample_rate: f64) -> Self {
         Self {
+            name,
             sample_rate,
             limits: SpanLimits::new(),
             respect_parent: true,
@@ -591,10 +537,7 @@ impl Builder {
         builder
     }
 
-    ///Enables `logs` exporter with provided `attrs` annotating logs
-    ///
-    ///Panics if called more than once
-    pub fn with_logs(self, _destination: &Destination<'_>) -> Self {
+    fn create_logs(&mut self, _destination: &Destination<'_>) -> opentelemetry_sdk::logs::SdkLoggerProvider {
         if self.otlp.logs.is_some() {
             panic!("Logs is already initialized")
         }
@@ -650,21 +593,30 @@ impl Builder {
 
         #[cfg(any(feature = "grpc", feature = "http", feature = "datadog"))]
         {
-            let mut this = self;
+            let this = self;
             let mut builder = SdkLoggerProvider::builder();
             if let Some(attrs) = _destination.attributes {
                 builder = builder.with_resource(attrs.0.clone());
             }
 
-            this.otlp.logs = Some(builder.with_log_processor(_exporter).build());
-            return this;
+            let logs = builder.with_log_processor(_exporter).build();
+            this.otlp.logs = Some(logs.clone());
+            return logs;
         }
     }
 
-    ///Enables `trace` exporter with provided `attrs` annotating traces
+    ///Enables `logs` exporter with provided `attrs` annotating logs
     ///
     ///Panics if called more than once
-    pub fn with_trace(self, _destination: &Destination<'_>, _settings: TraceSettings) -> Self {
+    ///
+    ///Returns layer that can be used to record logs
+    ///
+    ///Note that it is recommended to disable sending of logs within spans via [TraceSettings::with_max_events_per_span]
+    pub fn with_logs<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&mut self, destination: &Destination<'_>) -> impl tracing_subscriber::Layer<S> + Send + Sync {
+        opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(&self.create_logs(destination))
+    }
+
+    fn create_tracer(&mut self, _destination: &Destination<'_>, _settings: TraceSettings) -> opentelemetry_sdk::trace::SdkTracer {
         if self.otlp.trace.is_some() {
             panic!("Trace is already initialized")
         }
@@ -736,7 +688,9 @@ impl Builder {
 
         #[cfg(any(feature = "grpc", feature = "http", feature = "datadog"))]
         {
-            let mut this = self;
+            use opentelemetry::trace::TracerProvider;
+
+            let this = self;
             let sample_rate = _settings.sample_rate.clamp(0.0, 1.0);
             let mut builder = SdkTracerProvider::builder().with_id_generator(opentelemetry_sdk::trace::RandomIdGenerator::default());
             if _settings.respect_parent {
@@ -757,16 +711,24 @@ impl Builder {
                 builder = builder.with_resource(attrs.0.clone());
             }
 
-            this.otlp.trace = Some(builder.with_span_processor(_exporter).build());
-            return this;
+            let trace = builder.with_span_processor(_exporter).build();
+            let tracer = trace.tracer(_settings.name);
+            this.otlp.trace = Some(trace);
+            return tracer;
         }
     }
 
-    #[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
-    ///Enables `metrics` exporter with provided `attrs` annotating metrics
+    ///Enables `trace` exporter with provided `attrs` annotating traces, returning tracing layer
     ///
     ///Panics if called more than once
-    pub fn with_metrics(self, _destination: &Destination<'_>, _settings: MetricsSettings) -> Self {
+    ///
+    ///Returns layer that can be used to record traces
+    pub fn with_trace<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&mut self, destination: &Destination<'_>, settings: TraceSettings) -> impl tracing_subscriber::Layer<S> {
+        tracing_opentelemetry::OpenTelemetryLayer::new(self.create_tracer(destination, settings))
+    }
+
+    #[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
+    fn create_metrics(&mut self, _destination: &Destination<'_>, _settings: MetricsSettings) -> opentelemetry_sdk::metrics::SdkMeterProvider {
         if self.otlp.metrics.is_some() {
             panic!("Trace is already initialized")
         }
@@ -813,15 +775,39 @@ impl Builder {
 
         #[cfg(any(feature = "grpc", feature = "http"))]
         {
-            let mut this = self;
+            let this = self;
             let mut builder = opentelemetry_sdk::metrics::SdkMeterProvider::builder();
             if let Some(attrs) = _destination.attributes {
                 builder = builder.with_resource(attrs.0.clone());
             }
 
-            this.otlp.metrics = Some(builder.with_periodic_exporter(_exporter).build());
-            return this;
+            let metrics = builder.with_periodic_exporter(_exporter).build();
+            this.otlp.metrics = Some(metrics.clone());
+            return metrics;
         }
+    }
+
+    #[inline(always)]
+    #[cfg(feature = "metrics")]
+    ///Enables `metrics` exporter with provided `attrs` annotating metrics
+    ///
+    ///Panics if called more than once
+    pub fn with_metrics(&mut self, destination: &Destination<'_>, settings: MetricsSettings, name: &'static str) -> impl crate::metrics::Recorder + Send + Sync {
+        use opentelemetry::metrics::MeterProvider;
+
+        let metrics = self.create_metrics(destination, settings);
+        let meter = metrics.meter(name);
+        let metrics = metrics_opentelemetry::OpenTelemetryMetrics::new(meter);
+        metrics_opentelemetry::OpenTelemetryRecorder::new(metrics)
+    }
+
+    #[inline(always)]
+    #[cfg(feature = "tracing-metrics")]
+    ///Enables `tracing-metrics` exporter with provided `attrs` annotating metrics
+    ///
+    ///Panics if called more than once
+    pub fn with_tracing_metrics<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&mut self, destination: &Destination<'_>, settings: MetricsSettings) -> impl tracing_subscriber::Layer<S> + Send + Sync {
+        tracing_opentelemetry::MetricsLayer::new(self.create_metrics(destination, settings))
     }
 
     #[inline]

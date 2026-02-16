@@ -49,15 +49,21 @@
 //! use tracing_subscriber::util::SubscriberInitExt;
 //!
 //! let default_attrs = Attributes::builder().with_attr("service.name", "サービス").finish();
-//! let trace_settings = TraceSettings::new(1.0);
+//! let trace_settings = TraceSettings::new("tracing-opentelemetry".into(), 1.0);
 //! let destination = Destination {
 //!     protocol: Protocol::HttpBinary,
 //!     url: "http://localhost:45081".into(),
 //!     attributes: Some(&default_attrs),
 //! };
-//! let mut otlp = Otlp::builder().with_header("Authorization", "Basic <my token>").with_trace(&destination, trace_settings).finish();
-//! let registry = tracing_subscriber::registry().with(otlp.create_layer("tracing-opentelemetry".into())) //aggregates sdk providers into single layer
+//!
+//! //Create common OTLP settings
+//! let mut otlp = Otlp::builder().with_header("Authorization", "Basic <my token>");
+//! //Initialize subscriber
+//! let registry = tracing_subscriber::registry().with(otlp.with_trace(&destination, trace_settings)) //initializes tracing and return layer
+//!                                              .with(otlp.with_logs(&destination)) //initializes logging and returns layer
 //!                                              .with(tracing_subscriber::filter::LevelFilter::from_level(tracing::Level::INFO));
+//! //Finalizes OTLP returning guard
+//! let mut otlp = otlp.finish();
 //!
 //! let _guard = registry.set_default();
 //! //Do your job then shutdown to make sure you flush everything
@@ -81,6 +87,5 @@ pub use tracing;
 pub use tracing_subscriber;
 pub use opentelemetry;
 pub use opentelemetry_sdk;
-pub mod layer;
 pub mod builder;
 pub use builder::Otlp;

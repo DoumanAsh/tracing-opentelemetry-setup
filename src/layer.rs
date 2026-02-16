@@ -4,12 +4,12 @@
 ///Layer aggregation
 pub struct OtlpLayer<S> {
     ///tracing layer
-    pub trace: Option<tracing_opentelemetry::OpenTelemetryLayer<S, opentelemetry_sdk::trace::SdkTracer>>,
+    trace: Option<tracing_opentelemetry::OpenTelemetryLayer<S, opentelemetry_sdk::trace::SdkTracer>>,
     ///logging layer
-    pub logs: Option<opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge<opentelemetry_sdk::logs::SdkLoggerProvider, opentelemetry_sdk::logs::SdkLogger>>,
+    logs: Option<opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge<opentelemetry_sdk::logs::SdkLoggerProvider, opentelemetry_sdk::logs::SdkLogger>>,
     #[cfg(feature = "tracing-metrics")]
     ///metrics layer
-    pub metrics: Option<tracing_opentelemetry::MetricsLayer<S, opentelemetry_sdk::metrics::SdkMeterProvider>>,
+    metrics: Option<tracing_opentelemetry::MetricsLayer<S, opentelemetry_sdk::metrics::SdkMeterProvider>>,
 }
 
 macro_rules! impl_method {

@@ -3,6 +3,8 @@
 #[cfg(feature = "datadog")]
 #[test]
 pub fn should_export_datadog_agent_logs() {
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
     const OUTPUT_FILE: &str = "datadog_agent.log";
 
     struct CleanupFile<'a>(&'a str);
@@ -29,8 +31,9 @@ pub fn should_export_datadog_agent_logs() {
         protocol: tracing_opentelemetry_setup::builder::Protocol::DatadogAgent,
         attributes: Some(&attrs),
     };
-    let mut otlp = tracing_opentelemetry_setup::builder::Otlp::builder().with_logs(&destination).finish();
-    let _guard = otlp.local_init_tracing_subscriber("datadog_agent", tracing_subscriber::registry());
+    let mut otlp = tracing_opentelemetry_setup::builder::Otlp::builder();
+    let _guard = tracing_subscriber::registry().with(otlp.with_logs(&destination)).set_default();
+    let mut otlp = otlp.finish();
 
     tracing::info!(data=1, "my message");
 

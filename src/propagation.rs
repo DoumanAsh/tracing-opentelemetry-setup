@@ -1,9 +1,8 @@
 //! Opentelemtry propagation support
 
-use core::marker;
-use tracing::Span;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
-use opentelemetry::trace::Status;
+use core::{fmt, marker};
+
+use opentelemetry::trace::{Status, TraceContextExt};
 use opentelemetry::propagation::{Extractor, Injector, TextMapPropagator};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 
@@ -97,10 +96,11 @@ impl<T: ParentDestination> Injector for ParentDestinationImpl<T> {
 ///```rust
 ///use tracing_opentelemetry_setup::propagation::{Context, ParentSourceIter};
 ///
+///let parent_tracing_span = tracing::info_span!("parent_request");
 ///let source = std::collections::HashMap::<String, String>::new();
-///Context::current().set_parent_from(ParentSourceIter::new(&source));
+///let (parent_tracing_span, context) = Context::new_from_parent(parent_tracing_span, ParentSourceIter::new(&source));
 /////or directly since it is map
-///Context::current().set_parent_from(&source);
+///let (parent_tracing_span, context) = Context::new_from_parent(parent_tracing_span, &source);
 ///```
 pub trait ParentSource {
     ///Retrieves the value by specified key
@@ -215,10 +215,11 @@ impl<T: ParentSource> Extractor for ParentSourceImpl<T> {
 ///```rust
 ///use tracing_opentelemetry_setup::propagation::{Context, ParentSourceIter};
 ///
+///let parent_tracing_span = tracing::info_span!("parent_request");
 ///let source = std::collections::HashMap::<String, String>::new();
-///Context::current().set_parent_from(ParentSourceIter::new(&source));
+///let (parent_tracing_span, context) = Context::new_from_parent(parent_tracing_span, ParentSourceIter::new(&source));
 /////or directly since it is map
-///Context::current().set_parent_from(&source);
+///let (parent_tracing_span, context) = Context::new_from_parent(parent_tracing_span, &source);
 ///```
 pub struct ParentSourceIter<'a, K: AsRef<str> + 'a, V: AsRef<str> + 'a, T: IntoIterator<Item = (&'a K, &'a V)> + Copy + 'a> {
     inner: T,
@@ -280,41 +281,49 @@ impl<K: core::borrow::Borrow<str> + Ord, V: AsRef<str>> ParentSource for std::co
 
 ///Span wrapper to provide opentelemetry context propagation
 pub struct Context {
-    span: Span,
+    context: opentelemetry::context::Context,
 }
 
 impl Context {
-    #[inline(always)]
-    ///Creates context associated with `span`
-    pub const fn new(span: Span) -> Self {
-        Self {
-            span,
-        }
+    ///Creates new context inheriting parent context information from `source` using `context`
+    ///associated with `span`
+    ///
+    ///Note that `span` must be freshly created and not entered, otherwise propagation will not
+    ///work as opentelemetry allows propagation only on span creation
+    ///
+    ///You cannot initialize context using `tracing::instrument` so you always have to manually
+    ///construct span (without entering into it) using one of `tracing::span!` macros
+    pub fn new_from_parent(span: tracing::Span, source: impl ParentSource) -> (tracing::Span, Self) {
+        use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+        let parent = TraceContextPropagator::new().extract(&ParentSourceImpl(source));
+        let _ = span.set_parent(parent);
+        let this = Self {
+            context: span.context()
+        };
+        (span, this)
     }
 
     #[inline(always)]
     ///Creates context from currently execution context using `tracing::Span::current`
     pub fn current() -> Self {
-        Self::new(tracing::Span::current())
-    }
+        use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-    #[inline(always)]
-    ///Extracts `tracing::Span`
-    pub fn into_tracing_span(self) -> Span {
-        self.span
+        Self {
+            context: tracing::Span::current().context(),
+        }
     }
 
     #[inline(always)]
     ///Sets span status where `Ok` variant indicates success while `Err` contains error message
     pub fn set_status(&self, status: Result<(), std::borrow::Cow<'static, str>>) {
-        if !self.span.is_none() {
-            self.span.set_status(match status {
-                Ok(()) => Status::Ok,
-                Err(description) => Status::Error {
-                    description,
-                }
-            });
-        }
+        let span = self.context.span();
+        span.set_status(match status {
+            Ok(()) => Status::Ok,
+            Err(description) => Status::Error {
+                description,
+            }
+        });
     }
 
     #[inline(always)]
@@ -324,31 +333,25 @@ impl Context {
     ///
     ///Note that it requires you to declare these fields ahead of time when creating span
     pub fn set_error<E: core::error::Error>(&self, error: &E) {
-        if !self.span.is_none() {
-            self.span.record("error.type", core::any::type_name::<E>());
-            self.span.record("error.message", tracing::field::display(error));
-            self.span.set_status(Status::Error {
-                description: error.to_string().into()
-            });
-        }
-    }
-
-    #[inline(always)]
-    ///Sets parent context from `source`
-    ///
-    ///Has effect only once
-    pub fn set_parent_from(&self, source: impl ParentSource) {
-        if !self.span.is_none() {
-            let parent = TraceContextPropagator::new().extract(&ParentSourceImpl(source));
-            let _ = self.span.set_parent(parent);
-        }
+        let span = self.context.span();
+        span.record_error(error);
+        span.set_status(Status::Error {
+            description: error.to_string().into()
+        });
     }
 
     #[inline(always)]
     ///Extract `self` into `dest`
     pub fn inject_into(&self, dest: &mut impl ParentDestination) {
-        if !self.span.is_none() {
-            TraceContextPropagator::new().inject_context(&self.span.context(), &mut ParentDestinationImpl(dest));
-        }
+        //tracing-opentelemetry is pure garbage and cannot provide context
+        //Maybe it is better to use opentelemetry API directly instead of tracing...
+        TraceContextPropagator::new().inject_context(&self.context, &mut ParentDestinationImpl(dest));
+    }
+}
+
+impl fmt::Debug for Context {
+    #[inline(always)]
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.context, fmt)
     }
 }
