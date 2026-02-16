@@ -127,4 +127,4 @@ http-ureq = ["http", "ureq", "opentelemetry-http"]
 http-ureq-tls = ["http-ureq", "ureq/rustls", "ureq/platform-verifier"]
 
 [package.metadata.docs.rs]
-features = ["metrics", "grpc", "http", "propagation", "panic", "datadog", "http-ureq"]
+features = ["metrics", "grpc", "http", "propagation", "panic", "datadog", "http-ureq", "tracing-metrics"]

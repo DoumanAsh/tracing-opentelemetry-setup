@@ -792,6 +792,8 @@ impl Builder {
     ///Enables `metrics` exporter with provided `attrs` annotating metrics
     ///
     ///Panics if called more than once
+    ///
+    ///Returns `metrics::Recorder` to install and record `metrics`
     pub fn with_metrics(&mut self, destination: &Destination<'_>, settings: MetricsSettings, name: &'static str) -> impl crate::metrics::Recorder + Send + Sync {
         use opentelemetry::metrics::MeterProvider;
 
@@ -806,6 +808,9 @@ impl Builder {
     ///Enables `tracing-metrics` exporter with provided `attrs` annotating metrics
     ///
     ///Panics if called more than once
+    ///
+    ///Returns layer that records metrics provided via event/span attributes
+    ///Refer to [Layer](https://docs.rs/tracing-opentelemetry/latest/tracing_opentelemetry/struct.MetricsLayer.html) documentation for details.
     pub fn with_tracing_metrics<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&mut self, destination: &Destination<'_>, settings: MetricsSettings) -> impl tracing_subscriber::Layer<S> + Send + Sync {
         tracing_opentelemetry::MetricsLayer::new(self.create_metrics(destination, settings))
     }
