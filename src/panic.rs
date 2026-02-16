@@ -5,6 +5,18 @@ use std::panic::PanicHookInfo;
 use std::sync::OnceLock;
 use std::backtrace::{Backtrace, BacktraceStatus};
 
+fn propagate_status(message: &str) {
+    use opentelemetry::trace::Status;
+    use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+    //Panic hook is called before unwinding so we can set status on the span
+    //But this has no effect if there are no spans at all
+    let span = tracing::Span::current();
+    span.set_status(Status::Error {
+        description: message.to_owned().into(),
+    })
+}
+
 ///Panic hook implementation
 pub fn panic_hook(panic: &PanicHookInfo<'_>) {
     const DEFAULT_MESSAGE: &'static str = "panic occurred";
@@ -21,6 +33,7 @@ pub fn panic_hook(panic: &PanicHookInfo<'_>) {
         }
     };
 
+    propagate_status(msg);
     let backtrace = Backtrace::force_capture();
     if let BacktraceStatus::Captured = backtrace.status() {
         tracing::error!(
