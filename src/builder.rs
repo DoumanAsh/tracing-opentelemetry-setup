@@ -612,7 +612,7 @@ impl Builder {
     ///Returns layer that can be used to record logs
     ///
     ///Note that it is recommended to disable sending of logs within spans via [TraceSettings::with_max_events_per_span]
-    pub fn with_logs<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&mut self, destination: &Destination<'_>) -> impl tracing_subscriber::Layer<S> + Send + Sync {
+    pub fn with_logs<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&mut self, destination: &Destination<'_>) -> impl tracing_subscriber::Layer<S> + Send + Sync + use<S> {
         opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(&self.create_logs(destination))
     }
 
@@ -723,7 +723,7 @@ impl Builder {
     ///Panics if called more than once
     ///
     ///Returns layer that can be used to record traces
-    pub fn with_trace<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&mut self, destination: &Destination<'_>, settings: TraceSettings) -> impl tracing_subscriber::Layer<S> {
+    pub fn with_trace<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&mut self, destination: &Destination<'_>, settings: TraceSettings) -> impl tracing_subscriber::Layer<S> + use<S> {
         tracing_opentelemetry::OpenTelemetryLayer::new(self.create_tracer(destination, settings))
     }
 
@@ -794,7 +794,7 @@ impl Builder {
     ///Panics if called more than once
     ///
     ///Returns `metrics::Recorder` to install and record `metrics`
-    pub fn with_metrics(&mut self, destination: &Destination<'_>, settings: MetricsSettings, name: &'static str) -> impl crate::metrics::Recorder + Send + Sync {
+    pub fn with_metrics(&mut self, destination: &Destination<'_>, settings: MetricsSettings, name: &'static str) -> impl crate::metrics::Recorder + Send + Sync + 'static {
         use opentelemetry::metrics::MeterProvider;
 
         let metrics = self.create_metrics(destination, settings);
@@ -811,7 +811,7 @@ impl Builder {
     ///
     ///Returns layer that records metrics provided via event/span attributes
     ///Refer to [Layer](https://docs.rs/tracing-opentelemetry/latest/tracing_opentelemetry/struct.MetricsLayer.html) documentation for details.
-    pub fn with_tracing_metrics<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&mut self, destination: &Destination<'_>, settings: MetricsSettings) -> impl tracing_subscriber::Layer<S> + Send + Sync {
+    pub fn with_tracing_metrics<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&mut self, destination: &Destination<'_>, settings: MetricsSettings) -> impl tracing_subscriber::Layer<S> + Send + Sync + use<S> {
         tracing_opentelemetry::MetricsLayer::new(self.create_metrics(destination, settings))
     }
 
