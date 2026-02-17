@@ -8,9 +8,15 @@ use opentelemetry_sdk::error::{OTelSdkError, OTelSdkResult};
 use serde::ser::{SerializeSeq, SerializeMap};
 
 use crate::builder::Attributes;
+const FIELD_PREFIX: &str = "fields.";
 pub const SERVICE_NAME: opentelemetry::Key = opentelemetry::Key::from_static_str("service.name");
 pub const SERVICE_VERSION: opentelemetry::Key = opentelemetry::Key::from_static_str("service.version");
 pub const SERVICE_ENV: opentelemetry::Key = opentelemetry::Key::from_static_str("deployment.environment.name");
+
+pub const STATUS: opentelemetry::Key = opentelemetry::Key::from_static_str("status");
+pub const ERROR_STACK: opentelemetry::Key = opentelemetry::Key::from_static_str("error.stack");
+pub const ERROR_KIND: opentelemetry::Key = opentelemetry::Key::from_static_str("error.kind");
+pub const ERROR_MESSAGE: opentelemetry::Key = opentelemetry::Key::from_static_str("error.message");
 
 struct ValueSerde<'a>(&'a opentelemetry::Value);
 
@@ -172,9 +178,6 @@ impl<'a> serde::Serialize for LogRecord<'a> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut buffer = Buffer::new();
         let mut map = serializer.serialize_map(None)?;
-        if let Some(message) = self.record.body() {
-            map.serialize_entry("message", &AnyValueSerde(message))?;
-        }
 
         if let Some(timestamp) = self.record.timestamp().or_else(|| self.record.observed_timestamp()) {
             let timestamp: time::UtcDateTime = timestamp.into();
@@ -185,8 +188,8 @@ impl<'a> serde::Serialize for LogRecord<'a> {
             buffer.clear();
         }
 
-        if let Some(severity_text) = self.record.severity_text() {
-            map.serialize_entry("level", severity_text)?;
+        if let Some(severity) = self.record.severity_text() {
+            map.serialize_entry("level", severity)?;
         }
 
         if let Some(ctx) = &self.record.trace_context() {
@@ -206,7 +209,7 @@ impl<'a> serde::Serialize for LogRecord<'a> {
                     map.serialize_entry("version", &ValueSerde(value))?;
                 } else {
                     let key = buffer.as_str_with(|buffer| {
-                        buffer.push_bytes(b"fields.");
+                        buffer.push_bytes(FIELD_PREFIX.as_bytes());
                         buffer.push_bytes(key.as_str().as_bytes());
                         true
                     });
@@ -218,17 +221,89 @@ impl<'a> serde::Serialize for LogRecord<'a> {
                 }
             }
         }
+
+        let mut is_status_set = false;
+        let mut is_error_msg_set = false;
+        let mut is_error_kind_set = false;
         for (key, value) in self.record.attributes_iter() {
-            let key = buffer.as_str_with(|buffer| {
-                buffer.push_bytes(b"fields.");
-                buffer.push_bytes(key.as_str().as_bytes());
-                true
-            });
-            if let Some(key) = key {
-                map.serialize_entry(key, &AnyValueSerde(value))?;
+            //map error.* and status directly without fields
+            if *key == ERROR_KIND {
+                is_error_kind_set = true;
+                map.serialize_entry(ERROR_KIND.as_str(), &AnyValueSerde(value))?;
+            } else if *key == ERROR_MESSAGE {
+                is_error_msg_set = true;
+                map.serialize_entry(ERROR_MESSAGE.as_str(), &AnyValueSerde(value))?;
+            } else if *key == ERROR_STACK {
+                map.serialize_entry(ERROR_STACK.as_str(), &AnyValueSerde(value))?;
+            } else if *key == STATUS {
+                is_status_set = true;
+                map.serialize_entry(STATUS.as_str(), &AnyValueSerde(value))?;
+            } else {
+                let key = buffer.as_str_with(|buffer| {
+                    buffer.push_bytes(FIELD_PREFIX.as_bytes());
+                    buffer.push_bytes(key.as_str().as_bytes());
+                    true
+                });
+                if let Some(key) = key {
+                    map.serialize_entry(key, &AnyValueSerde(value))?;
+                }
+                buffer.clear();
             }
-            buffer.clear();
         }
+
+        //Error tracking support
+        //Reference: https://docs.datadoghq.com/logs/error_tracking/backend/?tab=nlog#attributes-for-error-tracking
+        //If status is not available, try to infer error status for error tracking
+        if !is_status_set {
+            if let Some(severity) = self.record.severity_number() {
+                use opentelemetry::logs::Severity;
+                //Map log level to have room for warning to be treated as error
+                match severity {
+                    Severity::Error | Severity::Error2 | Severity::Error3 | Severity::Error4 => {
+                        map.serialize_entry(STATUS.as_str(), "ALERT")?;
+                        if !is_error_kind_set {
+                            map.serialize_entry(ERROR_KIND.as_str(), "error")?;
+                        }
+
+                        //For errors, record message as `error.message` to group by it
+                        if let Some(message) = self.record.body() {
+                            if is_error_msg_set {
+                                map.serialize_entry("message", &AnyValueSerde(message))?;
+                            } else {
+                                map.serialize_entry(ERROR_MESSAGE.as_str(), &AnyValueSerde(message))?;
+                            }
+                        }
+                    }
+                    Severity::Warn | Severity::Warn2 | Severity::Warn3 | Severity::Warn4 => {
+                        map.serialize_entry(STATUS.as_str(), "ERROR")?;
+                        if !is_error_kind_set {
+                            map.serialize_entry(ERROR_KIND.as_str(), "warn")?;
+                        }
+
+                        if let Some(message) = self.record.body() {
+                            if is_error_msg_set {
+                                map.serialize_entry("message", &AnyValueSerde(message))?;
+                            } else {
+                                map.serialize_entry(ERROR_MESSAGE.as_str(), &AnyValueSerde(message))?;
+                            }
+                        }
+                    },
+                    Severity::Info | Severity::Info2 | Severity::Info3 | Severity::Info4 => {
+                        map.serialize_entry(STATUS.as_str(), "INFO")?;
+
+                        if let Some(message) = self.record.body() {
+                            map.serialize_entry("message", &AnyValueSerde(message))?;
+                        }
+                    },
+                    _ => {
+                        if let Some(message) = self.record.body() {
+                            map.serialize_entry("message", &AnyValueSerde(message))?;
+                        }
+                    },
+                }
+            }
+        }
+
         map.end()
     }
 }

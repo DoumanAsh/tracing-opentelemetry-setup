@@ -243,6 +243,18 @@ pub enum Protocol {
     ///
     ///In case of logs it can be `file://<full path>` to specify path to append logs. Otherwise `url` is ignored and `stdout` shall be used.
     ///Note that you're advised to disable attachment of events/logs to the span in this case
+    ///
+    ///## Error tracking
+    ///
+    ///For purpose of error tracking, logger printer makes adjustments to the output in following way:
+    ///- `service.name` becomes `service`
+    ///- `deployment.environment.name` becomes `env`
+    ///- `service.version` becomes `version
+    ///- Most fields of the record are prefixed with `field.` except:
+    ///    - `status` is recorded as it is. If not present, it will be mapped as `ALERT` for `error`, `ERROR` for `warn or `INFO` for info
+    ///    - `error.kind` is recorded as it is. If not present, it will be mapped to `error` or `warn` for corresponding log severity
+    ///    - `error.stack` is recorded as it is
+    ///    - `error.message` is recorded as it is. If not present, it will be recorded for `error` or `warn`
     DatadogAgent,
 }
 
