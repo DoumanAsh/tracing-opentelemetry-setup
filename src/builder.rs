@@ -661,6 +661,8 @@ impl Builder {
 
     #[inline]
     ///Specify common header to be included for all OTLP destinations
+    ///
+    ///In addition to that `opentelemetry-otlp` exporter will load headers from env variable `OTEL_EXPORTER_OTLP_HEADERS`
     pub fn with_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.push((key.into(), value.into()));
         self
