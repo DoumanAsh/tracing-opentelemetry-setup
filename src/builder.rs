@@ -390,6 +390,7 @@ pub struct Destination<'a> {
 }
 
 impl Destination<'_> {
+    #[cfg_attr(not(all(feature = "grpc", feature = "http", feature = "datadog")), allow(unused))]
     fn get_service_attrs(&self) -> Option<Attributes> {
         match self.attributes {
             Some(attrs) => Some(attrs.clone()),
