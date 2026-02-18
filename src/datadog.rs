@@ -257,10 +257,9 @@ impl<'a> serde::Serialize for LogRecord<'a> {
         if !is_status_set {
             if let Some(severity) = self.record.severity_number() {
                 use opentelemetry::logs::Severity;
-                //Map log level to have room for warning to be treated as error
                 match severity {
                     Severity::Error | Severity::Error2 | Severity::Error3 | Severity::Error4 => {
-                        map.serialize_entry(STATUS.as_str(), "ALERT")?;
+                        map.serialize_entry(STATUS.as_str(), "ERROR")?;
                         if !is_error_kind_set {
                             map.serialize_entry(ERROR_KIND.as_str(), "error")?;
                         }
@@ -274,27 +273,6 @@ impl<'a> serde::Serialize for LogRecord<'a> {
                             }
                         }
                     }
-                    Severity::Warn | Severity::Warn2 | Severity::Warn3 | Severity::Warn4 => {
-                        map.serialize_entry(STATUS.as_str(), "ERROR")?;
-                        if !is_error_kind_set {
-                            map.serialize_entry(ERROR_KIND.as_str(), "warn")?;
-                        }
-
-                        if let Some(message) = self.record.body() {
-                            if is_error_msg_set {
-                                map.serialize_entry("message", &AnyValueSerde(message))?;
-                            } else {
-                                map.serialize_entry(ERROR_MESSAGE.as_str(), &AnyValueSerde(message))?;
-                            }
-                        }
-                    },
-                    Severity::Info | Severity::Info2 | Severity::Info3 | Severity::Info4 => {
-                        map.serialize_entry(STATUS.as_str(), "INFO")?;
-
-                        if let Some(message) = self.record.body() {
-                            map.serialize_entry("message", &AnyValueSerde(message))?;
-                        }
-                    },
                     _ => {
                         if let Some(message) = self.record.body() {
                             map.serialize_entry("message", &AnyValueSerde(message))?;
