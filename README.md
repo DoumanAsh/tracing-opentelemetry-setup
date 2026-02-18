@@ -3,7 +3,7 @@
 [![Rust](https://github.com/DoumanAsh/tracing-opentelemetry-setup/actions/workflows/rust.yml/badge.svg)](https://github.com/DoumanAsh/tracing-opentelemetry-setup/actions/workflows/rust.yml)
 [![Crates.io](https://img.shields.io/crates/v/tracing-opentelemetry-setup.svg)](https://crates.io/crates/tracing-opentelemetry-setup)
 [![Documentation](https://docs.rs/tracing-opentelemetry-setup/badge.svg)](https://docs.rs/crate/tracing-opentelemetry-setup/)
-[![dependency status](https://deps.rs/crate/tracing-opentelemetry-setup/0.7.2/status.svg)](https://deps.rs/crate/tracing-opentelemetry-setup/0.7.2)
+[![dependency status](https://deps.rs/crate/tracing-opentelemetry-setup/0.7.3/status.svg)](https://deps.rs/crate/tracing-opentelemetry-setup/0.7.3)
 
 OpenTelemetry integration for tracing.
 

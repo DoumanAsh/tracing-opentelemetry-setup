@@ -1,4 +1,29 @@
+use tracing_opentelemetry_setup::builder::{self, Destination, Attributes};
 
+#[test]
+fn should_determine_default_resources_from_env() {
+    let attrs = Attributes::from_env();
+    if std::env::var("OTEL_RESOURCE_ATTRIBUTES").is_err() && std::env::var("OTEL_SERVICE_NAME").is_err() {
+        assert!(attrs.is_none(), "{:?} should not be set", attrs);
+    } else {
+        assert!(attrs.is_some());
+    }
+}
+
+#[test]
+fn should_determine_destination_from_env() {
+    #[cfg(not(all(feature = "http", feature = "grpc", feature = "datadog")))]
+    if std::env::var("OTEL_EXPORTER_OTLP_PROTOCOL").is_err() {
+        return;
+    }
+
+    let dest = Destination::from_env();
+    if let Some(protocol) = builder::Protocol::from_env() {
+        assert_eq!(dest.protocol, protocol);
+    } else {
+        assert_eq!(Some(dest.protocol), builder::Protocol::select_default());
+    }
+}
 
 #[cfg(feature = "datadog")]
 #[test]

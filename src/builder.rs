@@ -1,5 +1,6 @@
 //! Opentelemetry setup module
 
+use std::env;
 use core::{fmt, time};
 use std::borrow::Cow;
 
@@ -68,6 +69,49 @@ impl Attributes {
     pub fn builder() -> AttributesBuilder {
         AttributesBuilder::new()
     }
+
+    ///Extracts attributes from environment:
+    ///
+    ///- `OTEL_SERVICE_NAME` - sets value of `service.name` if present
+    ///- `OTEL_RESOURCE_ATTRIBUTES` - Free key/value pair of values to set
+    pub fn from_env() -> Option<Attributes> {
+        //sdk sets some default values on its own, so check yourself whether you want to build attributes or not
+        let mut is_set = false;
+        let mut builder = AttributesBuilder::new();
+
+        if let Ok(service_name) = env::var("OTEL_SERVICE_NAME") {
+            is_set = true;
+            builder = builder.with_service_name(service_name)
+        }
+
+        if let Ok(attrs) = env::var("OTEL_RESOURCE_ATTRIBUTES") {
+            for key_value in attrs.split(',') {
+                let mut key_value_iter = key_value.trim().splitn(2, '=');
+                let key = key_value_iter.next().unwrap();
+                match key_value_iter.next() {
+                    Some(value) => {
+                        is_set = true;
+                        builder = builder.with_attr(key.to_owned(), value.to_owned());
+                    },
+                    None => continue
+                }
+            }
+        }
+
+        if is_set {
+            Some(builder.finish())
+        } else {
+            None
+        }
+    }
+}
+
+impl fmt::Debug for Attributes {
+    #[inline]
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, fmt)
+
+    }
 }
 
 ///[Attributes] builder
@@ -82,6 +126,12 @@ impl AttributesBuilder {
         Self {
             inner: opentelemetry_sdk::resource::Resource::builder()
         }
+    }
+
+    #[inline]
+    fn with_service_name(mut self, value: impl Into<opentelemetry::Value>) -> Self {
+        self.inner = self.inner.with_service_name(value);
+        self
     }
 
     #[inline]
@@ -228,7 +278,7 @@ impl Drop for Otlp {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 ///Possible communication protocol
 pub enum Protocol {
     ///GRPC
@@ -259,6 +309,57 @@ pub enum Protocol {
 }
 
 impl Protocol {
+    ///Gets default value from available feature set.
+    ///
+    ///Priority:
+    ///- `HttpBinary`
+    ///- `Grpc`
+    ///- `DatadogAgent`
+    ///
+    ///Returns `None` if no feature is available
+    pub fn select_default() -> Option<Self> {
+        if cfg!(feature = "http") {
+            Some(Self::HttpBinary)
+        } else if cfg!(feature = "grpc") {
+            Some(Self::Grpc)
+        } else if cfg!(feature = "datadog") {
+            Some(Self::DatadogAgent)
+        } else {
+            None
+        }
+    }
+
+    ///Attempts to determine protocol from env variable `OTEL_EXPORTER_OTLP_PROTOCOL`
+    ///
+    ///Possible values:
+    ///- `grpc`
+    ///- `http/protobuf`
+    ///- `http/json`
+    ///- `datadog`
+    ///
+    ///Returns `None` if no env variable is available or doesn't match available protocols
+    pub fn from_env() -> Option<Self> {
+        match env::var("OTEL_EXPORTER_OTLP_PROTOCOL") {
+            Ok(protocol) => {
+                if protocol == "grpc" {
+                    return Some(Self::Grpc);
+                }
+                if protocol == "http/protobuf" {
+                    return Some(Self::HttpBinary);
+                }
+                if protocol == "http/json" {
+                    return Some(Self::HttpJson);
+                }
+                if protocol == "datadog" {
+                    return Some(Self::DatadogAgent);
+                }
+
+                None
+            },
+            Err(_) => None,
+        }
+    }
+
     #[allow(unused)]
     #[inline]
     const fn into_otel(self) -> opentelemetry_otlp::Protocol {
@@ -286,6 +387,40 @@ pub struct Destination<'a> {
     ///- `service.name`
     ///- `service.version`
     pub attributes: Option<&'a Attributes>
+}
+
+impl Destination<'_> {
+    fn get_service_attrs(&self) -> Option<Attributes> {
+        match self.attributes {
+            Some(attrs) => Some(attrs.clone()),
+            None => Attributes::from_env(),
+        }
+    }
+}
+
+impl Destination<'static> {
+    ///Determines destination parameters from environment variables:
+    ///
+    ///- `OTEL_EXPORTER_OTLP_ENDPOINT` - determines `url`. Defaults to localhost.
+    ///- `OTEL_EXPORTER_OTLP_PROTOCOL` - determines `protocol`. Defaults to `http/protobuf` or sole available feature enabled.
+    ///- `OTEL_RESOURCE_ATTRIBUTES` - optional key value setter for `attributes`.
+    pub fn from_env() -> Self {
+        let protocol = Protocol::from_env().or_else(Protocol::select_default).expect("Unable to determine Destination::protocol");
+        let url = match env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+            Ok(url) => url.into(),
+            Err(_) => match protocol {
+                Protocol::Grpc => "http://localhost:4317".into(),
+                Protocol::HttpBinary | Protocol::HttpJson => "http://localhost:4318".into(),
+                Protocol::DatadogAgent => "http://localhost:8126".into()
+            }
+        };
+
+        Self {
+            protocol,
+            url,
+            attributes: None,
+        }
+    }
 }
 
 macro_rules! declare_trace_limits {
@@ -578,7 +713,7 @@ impl Builder {
 
             #[cfg(feature = "datadog")]
             Protocol::DatadogAgent => {
-                let attributes = _destination.attributes.cloned();
+                let attributes = _destination.get_service_attrs();
                 if let Some(file_path) = _destination.url.strip_prefix("file://") {
                     opentelemetry_sdk::logs::BatchLogProcessor::builder(crate::datadog::file_exporter(file_path.to_owned().into()).with_attrs(attributes)).build()
                 } else {
@@ -607,8 +742,8 @@ impl Builder {
         {
             let this = self;
             let mut builder = SdkLoggerProvider::builder();
-            if let Some(attrs) = _destination.attributes {
-                builder = builder.with_resource(attrs.0.clone());
+            if let Some(attrs) = _destination.get_service_attrs() {
+                builder = builder.with_resource(attrs.0);
             }
 
             let logs = builder.with_log_processor(_exporter).build();
@@ -661,7 +796,7 @@ impl Builder {
                 use crate::datadog::{SERVICE_NAME, SERVICE_VERSION, SERVICE_ENV};
                 let mut exporter = opentelemetry_datadog::new_pipeline().with_agent_endpoint(_destination.url.clone());
 
-                if let Some(attrs) = _destination.attributes {
+                if let Some(attrs) = _destination.get_service_attrs() {
                     if let Some(service_name) = attrs.0.get(&SERVICE_NAME) {
                         exporter = exporter.with_service_name(service_name.to_string());
                     }
@@ -719,8 +854,8 @@ impl Builder {
                 }
             }
             builder = _settings.limits.apply_to(builder);
-            if let Some(attrs) = _destination.attributes {
-                builder = builder.with_resource(attrs.0.clone());
+            if let Some(attrs) = _destination.get_service_attrs() {
+                builder = builder.with_resource(attrs.0);
             }
 
             let trace = builder.with_span_processor(_exporter).build();
@@ -789,7 +924,7 @@ impl Builder {
         {
             let this = self;
             let mut builder = opentelemetry_sdk::metrics::SdkMeterProvider::builder();
-            if let Some(attrs) = _destination.attributes {
+            if let Some(attrs) = _destination.get_service_attrs() {
                 builder = builder.with_resource(attrs.0.clone());
             }
 
