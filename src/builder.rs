@@ -8,6 +8,8 @@ use opentelemetry_sdk::error::OTelSdkError;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 
+use crate::utils::extract_otlp_headers;
+
 #[cfg(feature = "grpc")]
 fn create_metadata_map(headers: &[(String, String)]) -> tonic::metadata::MetadataMap {
     use tonic::metadata::{MetadataMap, MetadataKey};
@@ -226,7 +228,7 @@ impl Otlp {
 
     #[inline]
     ///Starts building Opentelemetry integration
-    pub const fn builder() -> Builder {
+    pub fn builder() -> Builder {
         Builder::new()
     }
 
@@ -619,10 +621,15 @@ pub struct Builder {
 impl Builder {
     #[inline]
     ///Starts building Opentelemetry integration
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
+        let headers = if let Ok(value) = env::var("OTEL_EXPORTER_OTLP_HEADERS") {
+            extract_otlp_headers(&value)
+        } else {
+            Vec::new()
+        };
         Self {
             otlp: Otlp::new(),
-            headers: Vec::new(),
+            headers,
             timeout: time::Duration::from_secs(5),
             compression: true,
             #[cfg(feature = "http-ureq")]
@@ -661,6 +668,8 @@ impl Builder {
 
     #[inline]
     ///Specify common header to be included for all OTLP destinations
+    ///
+    ///Defaults to loading header values from `OTEL_EXPORTER_OTLP_HEADERS`
     pub fn with_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.push((key.into(), value.into()));
         self

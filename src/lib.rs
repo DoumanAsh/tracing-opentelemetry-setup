@@ -89,3 +89,4 @@ pub use opentelemetry;
 pub use opentelemetry_sdk;
 pub mod builder;
 pub use builder::Otlp;
+mod utils;
