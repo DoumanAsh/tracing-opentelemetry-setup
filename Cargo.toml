@@ -106,6 +106,9 @@ tracing-metrics = ["opentelemetry_sdk/metrics", "opentelemetry-otlp/metrics", "t
 # Specifies you want to use tokio runtime
 rt-tokio = ["opentelemetry_sdk/rt-tokio"]
 
+# Propagates `tracing-log` feature
+tracing-log = ["tracing-opentelemetry/tracing-log", "tracing-subscriber/tracing-log"]
+
 # non-standard exporters
 datadog = ["serde", "time", "serde_json", "opentelemetry-datadog"]
 

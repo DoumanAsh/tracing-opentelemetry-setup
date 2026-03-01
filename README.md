@@ -18,6 +18,7 @@ MSRV 1.85
 - `metrics` - Enable integration with [metrics](https://crates.io/crates/metrics)
 - `tracing-metrics` - Enable metrics usage via [tracing-opentelemetry](https://docs.rs/tracing-opentelemetry/latest/tracing_opentelemetry/struct.MetricsLayer.html)
 - `rt-tokio` - Tell OpenTelemetry sdk that you use tokio runtime
+- `tracing-log` - Enables `tracing-log` feature across all `tracing` ecosystem used by this crate.
 
 ### Non-standard exporters
 
