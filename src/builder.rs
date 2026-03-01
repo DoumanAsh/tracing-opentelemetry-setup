@@ -611,6 +611,7 @@ pub struct Builder {
     otlp: Otlp,
     headers: Vec<(String, String)>,
     timeout: time::Duration,
+    export_interval: time::Duration,
     compression: bool,
     #[cfg(feature = "http-ureq")]
     ureq: Option<crate::ureq::HttpClient>,
@@ -624,6 +625,7 @@ impl Builder {
             otlp: Otlp::new(),
             headers: Vec::new(),
             timeout: time::Duration::from_secs(5),
+            export_interval: time::Duration::ZERO,
             compression: true,
             #[cfg(feature = "http-ureq")]
             ureq: None,
@@ -668,6 +670,19 @@ impl Builder {
         self
     }
 
+    #[inline]
+    ///Specifies common interval to perform data export for all OTLP exporters
+    ///
+    ///Unless specified, this interval will be default initialized by opentelemetry-sdk optionally
+    ///ujsing following environment variables:
+    ///- OTEL_BLRP_SCHEDULE_DELAY - Specifies interval between two log batches.
+    ///- OTEL_BSP_EXPORT_TIMEOUT - Specifies interval between two trace batches.
+    ///- OTEL_METRIC_EXPORT_INTERVAL - Specifies interval between metric exports.
+    pub fn with_interval(mut self, interval: time::Duration) -> Self {
+        self.export_interval = interval;
+        self
+    }
+
     #[cfg(feature = "http")]
     fn apply_otel_http_config<T: opentelemetry_otlp::WithHttpConfig>(&self, mut builder: T) -> T {
         if cfg!(feature = "http-compression") && self.compression {
@@ -692,6 +707,11 @@ impl Builder {
             panic!("Logs is already initialized")
         }
 
+        let mut batch_config = opentelemetry_sdk::logs::BatchConfigBuilder::default();
+        if !self.export_interval.is_zero() {
+            batch_config = batch_config.with_scheduled_delay(self.export_interval);
+        }
+        let _batch_config = batch_config.build();
         let _exporter = match _destination.protocol {
             #[cfg(feature = "grpc")]
             Protocol::Grpc => {
@@ -709,7 +729,7 @@ impl Builder {
 
 
                 let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize logs grpc exporter");
-                opentelemetry_sdk::logs::BatchLogProcessor::builder(exporter).build()
+                opentelemetry_sdk::logs::BatchLogProcessor::builder(exporter).with_batch_config(_batch_config).build()
             },
             #[cfg(not(feature = "grpc"))]
             Protocol::Grpc => missing_grpc_feature(),
@@ -718,9 +738,9 @@ impl Builder {
             Protocol::DatadogAgent => {
                 let attributes = _destination.get_service_attrs();
                 if let Some(file_path) = _destination.url.strip_prefix("file://") {
-                    opentelemetry_sdk::logs::BatchLogProcessor::builder(crate::datadog::file_exporter(file_path.to_owned().into()).with_attrs(attributes)).build()
+                    opentelemetry_sdk::logs::BatchLogProcessor::builder(crate::datadog::file_exporter(file_path.to_owned().into()).with_attrs(attributes)).with_batch_config(_batch_config).build()
                 } else {
-                    opentelemetry_sdk::logs::BatchLogProcessor::builder(crate::datadog::stdout_exporter().with_attrs(attributes)).build()
+                    opentelemetry_sdk::logs::BatchLogProcessor::builder(crate::datadog::stdout_exporter().with_attrs(attributes)).with_batch_config(_batch_config).build()
                 }
             }
             #[cfg(not(feature = "datadog"))]
@@ -735,7 +755,7 @@ impl Builder {
                 builder = self.apply_otel_http_config(builder);
 
                 let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize logs http exporter");
-                opentelemetry_sdk::logs::BatchLogProcessor::builder(exporter).build()
+                opentelemetry_sdk::logs::BatchLogProcessor::builder(exporter).with_batch_config(_batch_config).build()
             },
             #[cfg(not(feature = "http"))]
             _ => missing_http_feature(),
@@ -771,7 +791,11 @@ impl Builder {
             panic!("Trace is already initialized")
         }
 
-        let _batch_config = opentelemetry_sdk::trace::BatchConfigBuilder::default().build();
+        let mut batch_config = opentelemetry_sdk::trace::BatchConfigBuilder::default();
+        if !self.export_interval.is_zero() {
+            batch_config = batch_config.with_scheduled_delay(self.export_interval);
+        }
+        let _batch_config = batch_config.build();
         let _exporter = match _destination.protocol {
             #[cfg(feature = "grpc")]
             Protocol::Grpc => {
@@ -931,7 +955,13 @@ impl Builder {
                 builder = builder.with_resource(attrs.0.clone());
             }
 
-            let metrics = builder.with_periodic_exporter(_exporter).build();
+            let mut reader = opentelemetry_sdk::metrics::PeriodicReader::builder(_exporter);
+
+            if !this.export_interval.is_zero() {
+                reader = reader.with_interval(this.export_interval);
+            }
+
+            let metrics = builder.with_reader(reader.build()).build();
             this.otlp.metrics = Some(metrics.clone());
             return metrics;
         }
