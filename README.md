@@ -51,7 +51,7 @@ Make sure `tracing-opentelemetry-setup` is installed to your dependencies
 
 ```rust
 use tracing_opentelemetry_setup::{Otlp, tracing_subscriber, tracing};
-use tracing_opentelemetry_setup::builder::{Destination, Protocol, Attributes, TraceSettings};                                           ```
+use tracing_opentelemetry_setup::builder::{Destination, Protocol, Attributes, TraceSettings};
 
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -76,3 +76,4 @@ let mut otlp = otlp.finish();
 let _guard = registry.set_default();
 //Do your job then shutdown to make sure you flush everything
 otlp.shutdown(None).expect("successfully shut down OTLP")
+```
