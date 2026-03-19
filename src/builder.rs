@@ -606,6 +606,133 @@ impl MetricsSettings {
     }
 }
 
+#[derive(Copy, Clone)]
+///Possible exporter runtimes to be used to export data
+pub enum ExportRuntime {
+    ///Default, independent thread is spawned by opentelemetry to export data
+    Threaded,
+    ///Multi-threaded tokio runtime is used to spawn task that exports data
+    ///
+    ///Requires `rt-tokio` feature
+    Tokio,
+    ///Single-threaded tokio runtime is used to spawn task that exports data
+    ///
+    ///Requires `rt-tokio` feature
+    TokioCurrentThrad
+}
+
+impl ExportRuntime {
+    #[cfg(any(feature = "grpc", feature = "http", feature = "datadog"))]
+    fn create_logger_exporter<E: opentelemetry_sdk::logs::LogExporter + 'static>(self, exporter: E, config: opentelemetry_sdk::logs::BatchConfig, destination: &Destination<'_>) -> SdkLoggerProvider {
+        let mut builder = SdkLoggerProvider::builder();
+        if let Some(attrs) = destination.get_service_attrs() {
+            builder = builder.with_resource(attrs.0);
+        }
+        match self {
+            Self::Threaded => {
+                let exporter = opentelemetry_sdk::logs::BatchLogProcessor::builder(exporter).with_batch_config(config).build();
+                builder.with_log_processor(exporter).build()
+            },
+            #[cfg(feature = "rt-tokio")]
+            Self::Tokio => {
+                let exporter = opentelemetry_sdk::logs::log_processor_with_async_runtime::BatchLogProcessor::builder(exporter, opentelemetry_sdk::runtime::Tokio).with_batch_config(config).build();
+                builder.with_log_processor(exporter).build()
+            },
+            #[cfg(feature = "rt-tokio")]
+            Self::TokioCurrentThrad => {
+                let exporter = opentelemetry_sdk::logs::log_processor_with_async_runtime::BatchLogProcessor::builder(exporter, opentelemetry_sdk::runtime::TokioCurrentThread).with_batch_config(config).build();
+                builder.with_log_processor(exporter).build()
+            },
+            #[cfg(not(feature = "rt-tokio"))]
+            _ => panic!("rt-tokio feature must be enabled for async runtime"),
+        }
+    }
+
+    #[cfg(any(feature = "grpc", feature = "http", feature = "datadog"))]
+    fn create_tracer_exporter<E: opentelemetry_sdk::trace::SpanExporter + 'static>(self, exporter: E, config: opentelemetry_sdk::trace::BatchConfig, destination: &Destination<'_>, settings: &TraceSettings) -> SdkTracerProvider {
+        let sample_rate = settings.sample_rate.clamp(0.0, 1.0);
+        let mut builder = SdkTracerProvider::builder().with_id_generator(opentelemetry_sdk::trace::RandomIdGenerator::default());
+        if settings.respect_parent {
+            let sampler = opentelemetry_sdk::trace::Sampler::ParentBased(Box::new(opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(sample_rate)));
+            builder = builder.with_sampler(sampler);
+        } else {
+            if sample_rate == 0.0 {
+                builder = builder.with_sampler(AlwaysOffSampler);
+            } else if sample_rate == 1.0 {
+                builder = builder.with_sampler(AlwaysOnSampler);
+            } else {
+                let sampler = opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(sample_rate);
+                builder = builder.with_sampler(sampler);
+            }
+        }
+        builder = settings.limits.apply_to(builder);
+        if let Some(attrs) = destination.get_service_attrs() {
+            builder = builder.with_resource(attrs.0);
+        }
+
+        match self {
+            Self::Threaded => {
+                let exporter = opentelemetry_sdk::trace::BatchSpanProcessor::builder(exporter).with_batch_config(config).build();
+                builder.with_span_processor(exporter).build()
+            },
+            #[cfg(feature = "rt-tokio")]
+            Self::Tokio => {
+                let exporter = opentelemetry_sdk::trace::span_processor_with_async_runtime::BatchSpanProcessor::builder(exporter, opentelemetry_sdk::runtime::Tokio).with_batch_config(config).build();
+                builder.with_span_processor(exporter).build()
+            },
+            #[cfg(feature = "rt-tokio")]
+            Self::TokioCurrentThrad => {
+                let exporter = opentelemetry_sdk::trace::span_processor_with_async_runtime::BatchSpanProcessor::builder(exporter, opentelemetry_sdk::runtime::TokioCurrentThread).with_batch_config(config).build();
+                builder.with_span_processor(exporter).build()
+            },
+            #[cfg(not(feature = "rt-tokio"))]
+            _ => panic!("rt-tokio feature must be enabled for async runtime"),
+        }
+    }
+
+    #[cfg(all(feature = "metrics", any(feature = "grpc", feature = "http")))]
+    fn create_metrics_exporter<E: opentelemetry_sdk::metrics::exporter::PushMetricExporter + 'static>(self, exporter: E, destination: &Destination<'_>, export_interval: time::Duration) -> opentelemetry_sdk::metrics::SdkMeterProvider {
+        let mut builder = opentelemetry_sdk::metrics::SdkMeterProvider::builder();
+        if let Some(attrs) = destination.get_service_attrs() {
+            builder = builder.with_resource(attrs.0.clone());
+        }
+
+        match self {
+            Self::Threaded => {
+                let mut reader = opentelemetry_sdk::metrics::PeriodicReader::builder(exporter);
+
+                if !export_interval.is_zero() {
+                    reader = reader.with_interval(export_interval);
+                }
+
+                builder.with_reader(reader.build()).build()
+            },
+            #[cfg(feature = "rt-tokio")]
+            Self::Tokio => {
+                let mut reader = opentelemetry_sdk::metrics::periodic_reader_with_async_runtime::PeriodicReader::builder(exporter, opentelemetry_sdk::runtime::Tokio);
+
+                if !export_interval.is_zero() {
+                    reader = reader.with_interval(export_interval);
+                }
+
+                builder.with_reader(reader.build()).build()
+            },
+            #[cfg(feature = "rt-tokio")]
+            Self::TokioCurrentThrad => {
+                let mut reader = opentelemetry_sdk::metrics::periodic_reader_with_async_runtime::PeriodicReader::builder(exporter, opentelemetry_sdk::runtime::Tokio);
+
+                if !export_interval.is_zero() {
+                    reader = reader.with_interval(export_interval);
+                }
+
+                builder.with_reader(reader.build()).build()
+            },
+            #[cfg(not(feature = "rt-tokio"))]
+            _ => panic!("rt-tokio feature must be enabled for async runtime"),
+        }
+    }
+}
+
 ///Opentelemetry integration builder
 pub struct Builder {
     otlp: Otlp,
@@ -615,6 +742,7 @@ pub struct Builder {
     compression: bool,
     #[cfg(feature = "http-ureq")]
     ureq: Option<crate::ureq::HttpClient>,
+    runtime: ExportRuntime,
 }
 
 impl Builder {
@@ -629,6 +757,7 @@ impl Builder {
             compression: true,
             #[cfg(feature = "http-ureq")]
             ureq: None,
+            runtime: ExportRuntime::Threaded,
         }
     }
 
@@ -683,6 +812,12 @@ impl Builder {
         self
     }
 
+    ///Specifies export runtime
+    pub fn with_runtime(mut self, runtime: ExportRuntime) -> Self {
+        self.runtime = runtime;
+        self
+    }
+
     #[cfg(feature = "http")]
     fn apply_otel_http_config<T: opentelemetry_otlp::WithHttpConfig>(&self, mut builder: T) -> T {
         if cfg!(feature = "http-compression") && self.compression {
@@ -712,7 +847,7 @@ impl Builder {
             batch_config = batch_config.with_scheduled_delay(self.export_interval);
         }
         let _batch_config = batch_config.build();
-        let _exporter = match _destination.protocol {
+        let _logs = match _destination.protocol {
             #[cfg(feature = "grpc")]
             Protocol::Grpc => {
                 use opentelemetry_otlp::{WithTonicConfig, WithExportConfig};
@@ -727,9 +862,8 @@ impl Builder {
                     builder = builder.with_metadata(headers);
                 }
 
-
                 let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize logs grpc exporter");
-                opentelemetry_sdk::logs::BatchLogProcessor::builder(exporter).with_batch_config(_batch_config).build()
+                self.runtime.create_logger_exporter(exporter, _batch_config, &_destination)
             },
             #[cfg(not(feature = "grpc"))]
             Protocol::Grpc => missing_grpc_feature(),
@@ -738,9 +872,9 @@ impl Builder {
             Protocol::DatadogAgent => {
                 let attributes = _destination.get_service_attrs();
                 if let Some(file_path) = _destination.url.strip_prefix("file://") {
-                    opentelemetry_sdk::logs::BatchLogProcessor::builder(crate::datadog::file_exporter(file_path.to_owned().into()).with_attrs(attributes)).with_batch_config(_batch_config).build()
+                    self.runtime.create_logger_exporter(crate::datadog::file_exporter(file_path.to_owned().into()).with_attrs(attributes), _batch_config, &_destination)
                 } else {
-                    opentelemetry_sdk::logs::BatchLogProcessor::builder(crate::datadog::stdout_exporter().with_attrs(attributes)).with_batch_config(_batch_config).build()
+                    self.runtime.create_logger_exporter(crate::datadog::stdout_exporter().with_attrs(attributes), _batch_config, &_destination)
                 }
             }
             #[cfg(not(feature = "datadog"))]
@@ -755,7 +889,7 @@ impl Builder {
                 builder = self.apply_otel_http_config(builder);
 
                 let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize logs http exporter");
-                opentelemetry_sdk::logs::BatchLogProcessor::builder(exporter).with_batch_config(_batch_config).build()
+                self.runtime.create_logger_exporter(exporter, _batch_config, _destination)
             },
             #[cfg(not(feature = "http"))]
             _ => missing_http_feature(),
@@ -764,14 +898,8 @@ impl Builder {
         #[cfg(any(feature = "grpc", feature = "http", feature = "datadog"))]
         {
             let this = self;
-            let mut builder = SdkLoggerProvider::builder();
-            if let Some(attrs) = _destination.get_service_attrs() {
-                builder = builder.with_resource(attrs.0);
-            }
-
-            let logs = builder.with_log_processor(_exporter).build();
-            this.otlp.logs = Some(logs.clone());
-            return logs;
+            this.otlp.logs = Some(_logs.clone());
+            return _logs;
         }
     }
 
@@ -796,7 +924,7 @@ impl Builder {
             batch_config = batch_config.with_scheduled_delay(self.export_interval);
         }
         let _batch_config = batch_config.build();
-        let _exporter = match _destination.protocol {
+        let _trace = match _destination.protocol {
             #[cfg(feature = "grpc")]
             Protocol::Grpc => {
                 use opentelemetry_otlp::{WithTonicConfig, WithExportConfig};
@@ -813,7 +941,7 @@ impl Builder {
 
 
                 let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize trace grpc exporter");
-                opentelemetry_sdk::trace::BatchSpanProcessor::new(exporter, _batch_config)
+                self.runtime.create_tracer_exporter(exporter, _batch_config, &_destination, &_settings)
             },
             #[cfg(not(feature = "grpc"))]
             Protocol::Grpc => missing_grpc_feature(),
@@ -841,7 +969,7 @@ impl Builder {
                 }
 
                 let exporter = exporter.build_exporter().expect("Failed to initialize datadog exporter");
-                opentelemetry_sdk::trace::BatchSpanProcessor::new(exporter, _batch_config)
+                self.runtime.create_tracer_exporter(exporter, _batch_config, &_destination, &_settings)
             },
             #[cfg(not(feature = "datadog"))]
             Protocol::DatadogAgent => missing_datadog_feature(),
@@ -854,7 +982,7 @@ impl Builder {
 
                 builder = self.apply_otel_http_config(builder);
                 let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize trace http exporter");
-                opentelemetry_sdk::trace::BatchSpanProcessor::new(exporter, _batch_config)
+                self.runtime.create_tracer_exporter(exporter, _batch_config, &_destination, &_settings)
             },
             #[cfg(not(feature = "http"))]
             _ => missing_http_feature(),
@@ -865,29 +993,9 @@ impl Builder {
             use opentelemetry::trace::TracerProvider;
 
             let this = self;
-            let sample_rate = _settings.sample_rate.clamp(0.0, 1.0);
-            let mut builder = SdkTracerProvider::builder().with_id_generator(opentelemetry_sdk::trace::RandomIdGenerator::default());
-            if _settings.respect_parent {
-                let sampler = opentelemetry_sdk::trace::Sampler::ParentBased(Box::new(opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(sample_rate)));
-                builder = builder.with_sampler(sampler);
-            } else {
-                if sample_rate == 0.0 {
-                    builder = builder.with_sampler(AlwaysOffSampler);
-                } else if sample_rate == 1.0 {
-                    builder = builder.with_sampler(AlwaysOnSampler);
-                } else {
-                    let sampler = opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(sample_rate);
-                    builder = builder.with_sampler(sampler);
-                }
-            }
-            builder = _settings.limits.apply_to(builder);
-            if let Some(attrs) = _destination.get_service_attrs() {
-                builder = builder.with_resource(attrs.0);
-            }
 
-            let trace = builder.with_span_processor(_exporter).build();
-            let tracer = trace.tracer(_settings.name);
-            this.otlp.trace = Some(trace);
+            let tracer = _trace.tracer(_settings.name);
+            this.otlp.trace = Some(_trace);
             return tracer;
         }
     }
@@ -907,7 +1015,7 @@ impl Builder {
             panic!("Trace is already initialized")
         }
 
-        let _exporter = match _destination.protocol {
+        let _metrics = match _destination.protocol {
             #[cfg(feature = "grpc")]
             Protocol::Grpc => {
                 use opentelemetry_otlp::{WithTonicConfig, WithExportConfig};
@@ -922,8 +1030,8 @@ impl Builder {
                     builder = builder.with_metadata(headers);
                 }
 
-
-                builder.with_timeout(self.timeout).build().expect("Failed to initialize metrics grpc exporter")
+                let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize metrics grpc exporter");
+                self.runtime.create_metrics_exporter(exporter, &_destination, self.export_interval)
             },
             #[cfg(not(feature = "grpc"))]
             Protocol::Grpc => missing_grpc_feature(),
@@ -941,7 +1049,8 @@ impl Builder {
 
                 builder = self.apply_otel_http_config(builder);
 
-                builder.with_timeout(self.timeout).build().expect("Failed to initialize metrics http exporter")
+                let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize metrics grpc exporter");
+                self.runtime.create_metrics_exporter(exporter, &_destination, self.export_interval)
             },
             #[cfg(not(feature = "http"))]
             _ => missing_http_feature(),
@@ -950,20 +1059,8 @@ impl Builder {
         #[cfg(any(feature = "grpc", feature = "http"))]
         {
             let this = self;
-            let mut builder = opentelemetry_sdk::metrics::SdkMeterProvider::builder();
-            if let Some(attrs) = _destination.get_service_attrs() {
-                builder = builder.with_resource(attrs.0.clone());
-            }
-
-            let mut reader = opentelemetry_sdk::metrics::PeriodicReader::builder(_exporter);
-
-            if !this.export_interval.is_zero() {
-                reader = reader.with_interval(this.export_interval);
-            }
-
-            let metrics = builder.with_reader(reader.build()).build();
-            this.otlp.metrics = Some(metrics.clone());
-            return metrics;
+            this.otlp.metrics = Some(_metrics.clone());
+            return _metrics;
         }
     }
 

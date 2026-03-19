@@ -1,6 +1,6 @@
 [package]
 name = "tracing-opentelemetry-setup"
-version = "0.7.7"
+version = "0.7.8"
 edition = "2024"
 rust-version = "1.85"
 description = "Utilities to provide proper setup of tracing with OTEL export"
@@ -104,7 +104,13 @@ metrics = ["opentelemetry_sdk/metrics", "opentelemetry-otlp/metrics", "metrics-o
 # Enables metrics propagation via tracing-opentelemetry crate
 tracing-metrics = ["opentelemetry_sdk/metrics", "opentelemetry-otlp/metrics", "tracing-opentelemetry/metrics"]
 # Specifies you want to use tokio runtime
-rt-tokio = ["opentelemetry_sdk/rt-tokio"]
+rt-tokio = [
+    "opentelemetry_sdk/rt-tokio",
+    "opentelemetry_sdk/rt-tokio-current-thread",
+    "opentelemetry_sdk/experimental_logs_batch_log_processor_with_async_runtime",
+    "opentelemetry_sdk/experimental_trace_batch_span_processor_with_async_runtime",
+    "opentelemetry_sdk/experimental_metrics_periodicreader_with_async_runtime",
+]
 
 # Propagates `tracing-log` feature
 tracing-log = ["tracing-opentelemetry/tracing-log", "tracing-subscriber/tracing-log"]
