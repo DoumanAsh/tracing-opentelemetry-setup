@@ -304,6 +304,28 @@ impl Otlp {
     }
 }
 
+impl fmt::Debug for Otlp {
+    #[inline]
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut fmt = fmt.debug_struct("Otlp");
+
+        if let Some(logs) = self.logs.as_ref() {
+            fmt.field("logs", logs);
+        }
+
+        if let Some(trace) = self.trace.as_ref() {
+            fmt.field("trace", trace);
+        }
+
+        #[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
+        if let Some(metrics) = self.metrics.as_ref() {
+            fmt.field("metrics", metrics);
+        }
+
+        fmt.finish()
+    }
+}
+
 impl Drop for Otlp {
     #[inline(always)]
     fn drop(&mut self) {
