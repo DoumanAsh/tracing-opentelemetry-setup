@@ -12,6 +12,7 @@
 //!- `tracing-metrics` - Enable metrics usage via [tracing-opentelemetry](https://docs.rs/tracing-opentelemetry/latest/tracing_opentelemetry/struct.MetricsLayer.html)
 //!- `rt-tokio` - Tell OpenTelemetry sdk that you use tokio runtime
 //!- `tracing-log` - Enables `tracing-log` feature across all `tracing` ecosystem used by this crate.
+//!- `internal-logs` - Enables `internal-logs` feature across opentelemetry crates.
 //!
 //!### Non-standard exporters
 //!

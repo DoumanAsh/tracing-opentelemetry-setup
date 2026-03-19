@@ -230,6 +230,39 @@ impl Otlp {
         Builder::new()
     }
 
+    ///Performs flush of the logs
+    pub fn flush(&mut self) -> Result<(), ShutdownError> {
+        let mut is_error = false;
+        let mut errors = ShutdownError::default();
+        if let Some(logs) = self.logs.take() {
+            if let Err(error) = logs.force_flush() {
+                is_error = true;
+                errors.logs = Some(error);
+            }
+        }
+
+        if let Some(trace) = self.trace.take() {
+            if let Err(error) = trace.force_flush() {
+                is_error = true;
+                errors.trace = Some(error);
+            }
+        }
+
+        #[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
+        if let Some(metrics) = self.metrics.take() {
+            if let Err(error) = metrics.force_flush() {
+                is_error = true;
+                errors.metrics = Some(error);
+            }
+        }
+
+        if is_error {
+            Err(errors)
+        } else {
+            Ok(())
+        }
+    }
+
     ///Performs shutdown, limiting it to `limit` for individual components
     ///
     ///If `limit` is `None` then defaults to 10 second wait
@@ -242,11 +275,6 @@ impl Otlp {
         let mut is_error = false;
         let mut errors = ShutdownError::default();
         if let Some(logs) = self.logs.take() {
-            if let Err(error) = logs.force_flush() {
-                is_error = true;
-                errors.logs = Some(error);
-            }
-
             if let Err(error) = logs.shutdown_with_timeout(limit) {
                 is_error = true;
                 errors.logs = Some(error);
@@ -254,11 +282,6 @@ impl Otlp {
         }
 
         if let Some(trace) = self.trace.take() {
-            if let Err(error) = trace.force_flush() {
-                is_error = true;
-                errors.trace = Some(error);
-            }
-
             if let Err(error) = trace.shutdown_with_timeout(limit) {
                 is_error = true;
                 errors.trace = Some(error);
@@ -267,11 +290,6 @@ impl Otlp {
 
         #[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
         if let Some(metrics) = self.metrics.take() {
-            if let Err(error) = metrics.force_flush() {
-                is_error = true;
-                errors.metrics = Some(error);
-            }
-
             if let Err(error) =  metrics.shutdown_with_timeout(limit) {
                 is_error = true;
                 errors.metrics = Some(error);
