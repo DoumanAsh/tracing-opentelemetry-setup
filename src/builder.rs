@@ -774,7 +774,7 @@ impl ExportRuntime {
             },
             #[cfg(feature = "rt-tokio")]
             Self::TokioCurrentThrad => {
-                let mut reader = opentelemetry_sdk::metrics::periodic_reader_with_async_runtime::PeriodicReader::builder(exporter, opentelemetry_sdk::runtime::Tokio);
+                let mut reader = opentelemetry_sdk::metrics::periodic_reader_with_async_runtime::PeriodicReader::builder(exporter, opentelemetry_sdk::runtime::TokioCurrentThread);
 
                 if !export_interval.is_zero() {
                     reader = reader.with_interval(export_interval);
@@ -794,6 +794,7 @@ pub struct Builder {
     headers: Vec<(String, String)>,
     timeout: time::Duration,
     export_interval: time::Duration,
+    queue_size: usize,
     compression: bool,
     #[cfg(feature = "http-ureq")]
     ureq: Option<crate::ureq::HttpClient>,
@@ -809,6 +810,7 @@ impl Builder {
             headers: Vec::new(),
             timeout: time::Duration::from_secs(5),
             export_interval: time::Duration::ZERO,
+            queue_size: 0,
             compression: true,
             #[cfg(feature = "http-ureq")]
             ureq: None,
@@ -857,13 +859,23 @@ impl Builder {
     #[inline]
     ///Specifies common interval to perform data export for all OTLP exporters
     ///
-    ///Unless specified, this interval will be default initialized by opentelemetry-sdk optionally
-    ///ujsing following environment variables:
+    ///Unless specified, this interval will be default initialized by opentelemetry-sdk optionally using following environment variables:
     ///- OTEL_BLRP_SCHEDULE_DELAY - Specifies interval between two log batches.
     ///- OTEL_BSP_EXPORT_TIMEOUT - Specifies interval between two trace batches.
     ///- OTEL_METRIC_EXPORT_INTERVAL - Specifies interval between metric exports.
     pub fn with_interval(mut self, interval: time::Duration) -> Self {
         self.export_interval = interval;
+        self
+    }
+
+    #[inline]
+    ///Specifies common size limit on pending queue among batch exporters (doesn't affect metrics)
+    ///
+    ///Unless specified, this interval will be default initialized by opentelemetry-sdk optionally using following environment variables:
+    ///- OTEL_BSP_MAX_QUEUE_SIZE - Specifies queue size of the trace batch exporter. Defaults to 2048.
+    ///- OTEL_BLRP_MAX_QUEUE_SIZE - Specifies queue size of the log batch exporter. Defaults to 2048.
+    pub fn with_queue_size(mut self, size: usize) -> Self {
+        self.queue_size = size;
         self
     }
 
@@ -901,6 +913,10 @@ impl Builder {
         if !self.export_interval.is_zero() {
             batch_config = batch_config.with_scheduled_delay(self.export_interval);
         }
+        if self.queue_size != 0 {
+            batch_config = batch_config.with_max_queue_size(self.queue_size);
+        }
+
         let _batch_config = batch_config.build();
         let _logs = match _destination.protocol {
             #[cfg(feature = "grpc")]
@@ -978,6 +994,10 @@ impl Builder {
         if !self.export_interval.is_zero() {
             batch_config = batch_config.with_scheduled_delay(self.export_interval);
         }
+        if self.queue_size != 0 {
+            batch_config = batch_config.with_max_queue_size(self.queue_size);
+        }
+
         let _batch_config = batch_config.build();
         let _trace = match _destination.protocol {
             #[cfg(feature = "grpc")]
