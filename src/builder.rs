@@ -231,17 +231,17 @@ impl Otlp {
     }
 
     ///Performs flush of the logs
-    pub fn flush(&mut self) -> Result<(), ShutdownError> {
+    pub fn flush(&self) -> Result<(), ShutdownError> {
         let mut is_error = false;
         let mut errors = ShutdownError::default();
-        if let Some(logs) = self.logs.take() {
+        if let Some(logs) = self.logs.as_ref() {
             if let Err(error) = logs.force_flush() {
                 is_error = true;
                 errors.logs = Some(error);
             }
         }
 
-        if let Some(trace) = self.trace.take() {
+        if let Some(trace) = self.trace.as_ref() {
             if let Err(error) = trace.force_flush() {
                 is_error = true;
                 errors.trace = Some(error);
@@ -249,7 +249,7 @@ impl Otlp {
         }
 
         #[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
-        if let Some(metrics) = self.metrics.take() {
+        if let Some(metrics) = self.metrics.as_ref() {
             if let Err(error) = metrics.force_flush() {
                 is_error = true;
                 errors.metrics = Some(error);
