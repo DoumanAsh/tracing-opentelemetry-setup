@@ -242,6 +242,11 @@ impl Otlp {
         let mut is_error = false;
         let mut errors = ShutdownError::default();
         if let Some(logs) = self.logs.take() {
+            if let Err(error) = logs.force_flush() {
+                is_error = true;
+                errors.logs = Some(error);
+            }
+
             if let Err(error) = logs.shutdown_with_timeout(limit) {
                 is_error = true;
                 errors.logs = Some(error);
@@ -249,6 +254,11 @@ impl Otlp {
         }
 
         if let Some(trace) = self.trace.take() {
+            if let Err(error) = trace.force_flush() {
+                is_error = true;
+                errors.trace = Some(error);
+            }
+
             if let Err(error) = trace.shutdown_with_timeout(limit) {
                 is_error = true;
                 errors.trace = Some(error);
@@ -257,6 +267,11 @@ impl Otlp {
 
         #[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
         if let Some(metrics) = self.metrics.take() {
+            if let Err(error) = metrics.force_flush() {
+                is_error = true;
+                errors.metrics = Some(error);
+            }
+
             if let Err(error) =  metrics.shutdown_with_timeout(limit) {
                 is_error = true;
                 errors.metrics = Some(error);
