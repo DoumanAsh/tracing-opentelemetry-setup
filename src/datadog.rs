@@ -20,7 +20,6 @@ pub const ERROR_MESSAGE: opentelemetry::Key = opentelemetry::Key::from_static_st
 
 struct ValueSerde<'a>(&'a opentelemetry::Value);
 
-
 impl serde::Serialize for ValueSerde<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use opentelemetry::Value;
@@ -115,7 +114,23 @@ impl serde::Serialize for AnyValueSerde<'_> {
     }
 }
 
-pub struct Buffer {
+struct BufferGuard<'a>(&'a mut Buffer);
+
+impl<'a> BufferGuard<'a> {
+    #[inline(always)]
+    pub fn as_str(&'a self) -> Option<&'a str> {
+        self.0.as_str()
+    }
+}
+
+impl Drop for BufferGuard<'_> {
+    #[inline]
+    fn drop(&mut self) {
+        self.0.clear();
+    }
+}
+
+struct Buffer {
     inner: [u8; 1024],
     len: usize,
 }
@@ -129,9 +144,9 @@ impl Buffer {
     }
 
     #[inline(always)]
-    pub fn as_str_with(&mut self, cb: impl FnOnce(&mut Self) -> bool) -> Option<&'_ str> {
+    pub fn as_str_with(&mut self, cb: impl FnOnce(&mut Self) -> bool) -> Option<BufferGuard<'_>> {
         if (cb)(self) {
-            self.as_str()
+            Some(BufferGuard(self))
         } else {
             self.clear();
             None
@@ -182,10 +197,9 @@ impl<'a> serde::Serialize for LogRecord<'a> {
         if let Some(timestamp) = self.record.timestamp().or_else(|| self.record.observed_timestamp()) {
             let timestamp: time::UtcDateTime = timestamp.into();
             let timestamp = buffer.as_str_with(|buffer| timestamp.format_into(buffer, &time::format_description::well_known::Rfc3339).is_ok());
-            if let Some(timestamp) = timestamp  {
-                map.serialize_entry("timestamp", &timestamp)?;
+            if let Some(timestamp) = timestamp.as_ref().and_then(BufferGuard::as_str)  {
+                map.serialize_entry("timestamp", timestamp)?;
             }
-            buffer.clear();
         }
 
         if let Some(severity) = self.record.severity_text() {
@@ -214,10 +228,9 @@ impl<'a> serde::Serialize for LogRecord<'a> {
                         true
                     });
 
-                    if let Some(key) = key {
+                    if let Some(key) = key.as_ref().and_then(BufferGuard::as_str) {
                         map.serialize_entry(key, &ValueSerde(value))?;
                     }
-                    buffer.clear();
                 }
             }
         }
@@ -244,10 +257,9 @@ impl<'a> serde::Serialize for LogRecord<'a> {
                     buffer.push_bytes(key.as_str().as_bytes());
                     true
                 });
-                if let Some(key) = key {
+                if let Some(key) = key.as_ref().and_then(BufferGuard::as_str) {
                     map.serialize_entry(key, &AnyValueSerde(value))?;
                 }
-                buffer.clear();
             }
         }
 
