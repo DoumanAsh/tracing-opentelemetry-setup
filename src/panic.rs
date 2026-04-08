@@ -18,7 +18,7 @@ impl PanicRecorder for Exception {
     fn capture(location: &Location, message: &str, backtrace: Backtrace) {
         if let BacktraceStatus::Captured = backtrace.status() {
             tracing::error!(
-                exception.location = %location,
+                panic.location = %location,
                 exception.stacktrace = %backtrace,
                 exception.message = message,
                 exception.type = "Rust Panic",
@@ -26,7 +26,7 @@ impl PanicRecorder for Exception {
             );
         } else {
             tracing::error!(
-                exception.location = %location,
+                panic.location = %location,
                 exception.message = message,
                 exception.type = "Rust Panic",
                 "exception",
@@ -46,7 +46,7 @@ impl PanicRecorder for Error {
     fn capture(location: &Location, message: &str, backtrace: Backtrace) {
         if let BacktraceStatus::Captured = backtrace.status() {
             tracing::error!(
-                error.location = %location,
+                panic.location = %location,
                 error.stack = %backtrace,
                 error.message = message,
                 error.type = "Rust Panic",
@@ -54,7 +54,7 @@ impl PanicRecorder for Error {
             );
         } else {
             tracing::error!(
-                error.location = %location,
+                panic.location = %location,
                 error.message = message,
                 error.type = "Rust Panic",
                 "exception",
