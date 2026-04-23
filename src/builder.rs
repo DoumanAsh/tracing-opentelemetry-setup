@@ -70,6 +70,37 @@ impl Attributes {
         AttributesBuilder::new()
     }
 
+    #[inline]
+    ///Starts Attributes builder by initially setting it through env variable
+    ///
+    ///Extracts attributes from environment:
+    ///
+    ///- `OTEL_SERVICE_NAME` - sets value of `service.name` if present
+    ///- `OTEL_RESOURCE_ATTRIBUTES` - Free key/value pair of values to set
+    pub fn builder_env() -> AttributesBuilder {
+        //sdk sets some default values on its own, so check yourself whether you want to build attributes or not
+        let mut builder = AttributesBuilder::new();
+
+        if let Ok(service_name) = env::var("OTEL_SERVICE_NAME") {
+            builder = builder.with_service_name(service_name)
+        }
+
+        if let Ok(attrs) = env::var("OTEL_RESOURCE_ATTRIBUTES") {
+            for key_value in attrs.split(',') {
+                let mut key_value_iter = key_value.trim().splitn(2, '=');
+                let key = key_value_iter.next().unwrap();
+                match key_value_iter.next() {
+                    Some(value) => {
+                        builder = builder.with_attr(key.to_owned(), value.to_owned());
+                    },
+                    None => continue
+                }
+            }
+        }
+
+        builder
+    }
+
     ///Extracts attributes from environment:
     ///
     ///- `OTEL_SERVICE_NAME` - sets value of `service.name` if present
@@ -141,6 +172,18 @@ impl AttributesBuilder {
     pub fn with_attr(mut self, key: impl Into<Cow<'static, str>>, value: impl Into<opentelemetry::Value>) -> Self {
         self.inner = self.inner.with_attribute(opentelemetry::KeyValue::new(key.into(), value.into()));
         self
+    }
+
+    #[inline]
+    ///Specifies `key` attribute to be initialized from optional environment variable `env_name`
+    ///
+    ///Does nothing if `env_name` is missing
+    pub fn with_env_attr(self, key: impl Into<Cow<'static, str>>, env_name: &str) -> Self {
+        if let Ok(value) = std::env::var(env_name) {
+            self.with_attr(key, value)
+        } else {
+            self
+        }
     }
 
     #[inline]
