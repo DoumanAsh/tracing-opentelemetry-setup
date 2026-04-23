@@ -885,12 +885,21 @@ impl Builder {
     }
 
     #[cfg(feature = "http-ureq")]
+    ///Enables usage of simple blocking http client provided by user as `ureq`
+    ///
+    ///Requires `http-ureq` feature enabled
+    pub fn with_ureq_http_client_shared(mut self, ureq: crate::ureq::HttpClient) -> Self {
+        self.ureq = Some(ureq);
+        self
+    }
+
+    #[inline(always)]
+    #[cfg(feature = "http-ureq")]
     ///Enables usage of simple blocking http client
     ///
     ///Requires `http-ureq` feature enabled
-    pub fn with_ureq_http_client(mut self) -> Self {
-        self.ureq = Some(crate::ureq::HttpClient::new());
-        self
+    pub fn with_ureq_http_client(self) -> Self {
+        self.with_ureq_http_client_shared(crate::ureq::HttpClient::new())
     }
 
     #[inline]
