@@ -65,7 +65,7 @@ pub struct Attributes(pub(crate) opentelemetry_sdk::Resource);
 
 impl Attributes {
     #[inline]
-    ///Starts Attributes builder
+    ///Starts empty Attributes builder
     pub fn builder() -> AttributesBuilder {
         AttributesBuilder::new()
     }
@@ -78,8 +78,58 @@ impl Attributes {
     ///- `OTEL_SERVICE_NAME` - sets value of `service.name` if present
     ///- `OTEL_RESOURCE_ATTRIBUTES` - Free key/value pair of values to set
     pub fn builder_env() -> AttributesBuilder {
+        AttributesBuilder::new_env()
+    }
+
+    ///Extracts attributes from environment:
+    ///
+    ///- `OTEL_SERVICE_NAME` - sets value of `service.name` if present
+    ///- `OTEL_RESOURCE_ATTRIBUTES` - Free key/value pair of values to set
+    pub fn from_env() -> Option<Attributes> {
+        let builder = AttributesBuilder::new_env();
+
         //sdk sets some default values on its own, so check yourself whether you want to build attributes or not
-        let mut builder = AttributesBuilder::new();
+        if builder.is_mutated {
+            Some(builder.finish())
+        } else {
+            None
+        }
+    }
+}
+
+impl fmt::Debug for Attributes {
+    #[inline]
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, fmt)
+
+    }
+}
+
+///[Attributes] builder
+pub struct AttributesBuilder {
+    is_mutated: bool,
+    inner: opentelemetry_sdk::resource::ResourceBuilder
+}
+
+impl AttributesBuilder {
+    #[inline]
+    ///Creates new empty builder
+    pub fn new() -> Self {
+        Self {
+            is_mutated: false,
+            inner: opentelemetry_sdk::resource::Resource::builder()
+        }
+    }
+
+    ///Starts Attributes builder by initially setting it through env variable
+    ///
+    ///Extracts attributes from environment:
+    ///
+    ///- `OTEL_SERVICE_NAME` - sets value of `service.name` if present
+    ///- `OTEL_RESOURCE_ATTRIBUTES` - Free key/value pair of values to set
+    pub fn new_env() -> Self {
+        //sdk sets some default values on its own, so check yourself whether you want to build attributes or not
+        let mut builder = Self::new();
 
         if let Ok(service_name) = env::var("OTEL_SERVICE_NAME") {
             builder = builder.with_service_name(service_name)
@@ -101,66 +151,9 @@ impl Attributes {
         builder
     }
 
-    ///Extracts attributes from environment:
-    ///
-    ///- `OTEL_SERVICE_NAME` - sets value of `service.name` if present
-    ///- `OTEL_RESOURCE_ATTRIBUTES` - Free key/value pair of values to set
-    pub fn from_env() -> Option<Attributes> {
-        //sdk sets some default values on its own, so check yourself whether you want to build attributes or not
-        let mut is_set = false;
-        let mut builder = AttributesBuilder::new();
-
-        if let Ok(service_name) = env::var("OTEL_SERVICE_NAME") {
-            is_set = true;
-            builder = builder.with_service_name(service_name)
-        }
-
-        if let Ok(attrs) = env::var("OTEL_RESOURCE_ATTRIBUTES") {
-            for key_value in attrs.split(',') {
-                let mut key_value_iter = key_value.trim().splitn(2, '=');
-                let key = key_value_iter.next().unwrap();
-                match key_value_iter.next() {
-                    Some(value) => {
-                        is_set = true;
-                        builder = builder.with_attr(key.to_owned(), value.to_owned());
-                    },
-                    None => continue
-                }
-            }
-        }
-
-        if is_set {
-            Some(builder.finish())
-        } else {
-            None
-        }
-    }
-}
-
-impl fmt::Debug for Attributes {
-    #[inline]
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, fmt)
-
-    }
-}
-
-///[Attributes] builder
-pub struct AttributesBuilder {
-    inner: opentelemetry_sdk::resource::ResourceBuilder
-}
-
-impl AttributesBuilder {
-    #[inline]
-    ///Creates new builder
-    pub fn new() -> Self {
-        Self {
-            inner: opentelemetry_sdk::resource::Resource::builder()
-        }
-    }
-
     #[inline]
     fn with_service_name(mut self, value: impl Into<opentelemetry::Value>) -> Self {
+        self.is_mutated = true;
         self.inner = self.inner.with_service_name(value);
         self
     }
@@ -170,6 +163,7 @@ impl AttributesBuilder {
     ///
     ///`value` is always `opentelemetry::Value` and there is no guarantee about its stability
     pub fn with_attr(mut self, key: impl Into<Cow<'static, str>>, value: impl Into<opentelemetry::Value>) -> Self {
+        self.is_mutated = true;
         self.inner = self.inner.with_attribute(opentelemetry::KeyValue::new(key.into(), value.into()));
         self
     }
@@ -191,6 +185,19 @@ impl AttributesBuilder {
     pub fn finish(self) -> Attributes {
         Attributes(self.inner.build())
     }
+
+    #[inline]
+    ///Finalize builder if any attribute is set
+    ///
+    ///Returns `None` if no attribute has been set
+    pub fn finish_if_set(self) -> Option<Attributes> {
+        if self.is_mutated {
+            Some(self.finish())
+        } else {
+            None
+        }
+    }
+
 }
 
 #[derive(Default)]
@@ -308,16 +315,30 @@ impl Otlp {
 
     ///Performs shutdown, limiting it to `limit` for individual components
     ///
-    ///If `limit` is `None` then defaults to 10 second wait
+    ///If `limit` is `None` then performs check of following environment variables:
+    ///- `OTEL_EXPORTER_OTLP_TIMEOUT` - timeout in seconds for all flushes
+    ///- `OTEL_EXPORTER_OTLP_TRACES_TIMEOUT` - timeout in seconds for traces only
+    ///- `OTEL_EXPORTER_OTLP_METRICS_TIMEOUT` - timeout in seconds for metrics only
+    ///- `OTEL_EXPORTER_OTLP_LOGS_TIMEOUT` - timeout in seconds for logs only
+    ///
+    ///If no timeout is available, then defaults to 10s
     pub fn shutdown(&mut self, limit: Option<time::Duration>) -> Result<(), ShutdownError> {
-        let limit = match limit {
-            Some(limit) => limit,
-            None => time::Duration::from_secs(10),
-        };
+        fn get_default_timeout(key: &str) -> time::Duration {
+            for key in [key, "OTEL_EXPORTER_OTLP_TIMEOUT"] {
+                if let Ok(value) = env::var(key) {
+                    if let Ok(value) = value.parse() {
+                        return time::Duration::from_secs(value)
+                    }
+                }
+            }
+
+            time::Duration::from_secs(10)
+        }
 
         let mut is_error = false;
         let mut errors = ShutdownError::default();
         if let Some(logs) = self.logs.take() {
+            let limit = limit.unwrap_or_else(|| get_default_timeout("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT"));
             if let Err(error) = logs.shutdown_with_timeout(limit) {
                 is_error = true;
                 errors.logs = Some(error);
@@ -325,6 +346,7 @@ impl Otlp {
         }
 
         if let Some(trace) = self.trace.take() {
+            let limit = limit.unwrap_or_else(|| get_default_timeout("OTEL_EXPORTER_OTLP_TRACES_TIMEOUT"));
             if let Err(error) = trace.shutdown_with_timeout(limit) {
                 is_error = true;
                 errors.trace = Some(error);
@@ -333,6 +355,7 @@ impl Otlp {
 
         #[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
         if let Some(metrics) = self.metrics.take() {
+            let limit = limit.unwrap_or_else(|| get_default_timeout("OTEL_EXPORTER_OTLP_METRICS_TIMEOUT"));
             if let Err(error) =  metrics.shutdown_with_timeout(limit) {
                 is_error = true;
                 errors.metrics = Some(error);
