@@ -697,6 +697,7 @@ impl TraceSettings {
     }
 
     #[inline]
+    #[cfg(any(feature = "grpc", feature = "http", feature = "datadog"))]
     fn create_sampler(&self) -> Box<dyn opentelemetry_sdk::trace::ShouldSample> {
         let sample_rate = self.sample_rate.clamp(0.0, 1.0);
         if self.respect_parent {
