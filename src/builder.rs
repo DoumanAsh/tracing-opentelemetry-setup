@@ -485,10 +485,13 @@ impl Protocol {
     #[inline]
     const fn into_otel(self) -> opentelemetry_otlp::Protocol {
         match self {
+            #[cfg(feature = "grpc")]
             Self::Grpc => opentelemetry_otlp::Protocol::Grpc,
+            #[cfg(feature = "http")]
             Self::HttpJson => opentelemetry_otlp::Protocol::HttpJson,
+            #[cfg(feature = "http")]
             Self::HttpBinary => opentelemetry_otlp::Protocol::HttpBinary,
-            Self::DatadogAgent => unreachable!(),
+            _ => unreachable!(),
         }
 
     }
@@ -593,11 +596,11 @@ struct AlwaysOnSampler;
 
 impl opentelemetry_sdk::trace::ShouldSample for AlwaysOnSampler {
     #[inline(always)]
-    fn should_sample(&self, parent_context: Option<&opentelemetry::Context>, _: opentelemetry::TraceId, _: &str, _: &opentelemetry::trace::SpanKind, _: &[opentelemetry::KeyValue], _: &[opentelemetry::trace::Link]) -> opentelemetry::trace::SamplingResult {
+    fn should_sample(&self, parent_context: Option<&opentelemetry::Context>, _: opentelemetry::TraceId, _: &str, _: &opentelemetry::trace::SpanKind, _: &[opentelemetry::KeyValue], _: &[opentelemetry::trace::Link]) -> opentelemetry_sdk::trace::SamplingResult {
         use opentelemetry::trace::TraceContextExt;
 
-        opentelemetry::trace::SamplingResult {
-            decision: opentelemetry::trace::SamplingDecision::RecordAndSample,
+        opentelemetry_sdk::trace::SamplingResult {
+            decision: opentelemetry_sdk::trace::SamplingDecision::RecordAndSample,
             attributes: Vec::new(),
             trace_state: match parent_context {
                 Some(ctx) => ctx.span().span_context().trace_state().clone(),
@@ -613,11 +616,11 @@ struct AlwaysOffSampler;
 
 impl opentelemetry_sdk::trace::ShouldSample for AlwaysOffSampler {
     #[inline(always)]
-    fn should_sample(&self, parent_context: Option<&opentelemetry::Context>, _: opentelemetry::TraceId, _: &str, _: &opentelemetry::trace::SpanKind, _: &[opentelemetry::KeyValue], _: &[opentelemetry::trace::Link]) -> opentelemetry::trace::SamplingResult {
+    fn should_sample(&self, parent_context: Option<&opentelemetry::Context>, _: opentelemetry::TraceId, _: &str, _: &opentelemetry::trace::SpanKind, _: &[opentelemetry::KeyValue], _: &[opentelemetry::trace::Link]) -> opentelemetry_sdk::trace::SamplingResult {
         use opentelemetry::trace::TraceContextExt;
 
-        opentelemetry::trace::SamplingResult {
-            decision: opentelemetry::trace::SamplingDecision::Drop,
+        opentelemetry_sdk::trace::SamplingResult {
+            decision: opentelemetry_sdk::trace::SamplingDecision::Drop,
             attributes: Vec::new(),
             trace_state: match parent_context {
                 Some(ctx) => ctx.span().span_context().trace_state().clone(),
@@ -691,6 +694,22 @@ impl TraceSettings {
     pub const fn with_max_attributes_per_link(mut self, with_max_attributes_per_link: u32) -> Self {
         set_trace_limit!(self.limits, with_max_attributes_per_link);
         self
+    }
+
+    #[inline]
+    fn create_sampler(&self) -> Box<dyn opentelemetry_sdk::trace::ShouldSample> {
+        let sample_rate = self.sample_rate.clamp(0.0, 1.0);
+        if self.respect_parent {
+            Box::new(opentelemetry_sdk::trace::Sampler::ParentBased(Box::new(opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(sample_rate))))
+        } else {
+            if sample_rate == 0.0 {
+                Box::new(AlwaysOffSampler)
+            } else if sample_rate == 1.0 {
+                Box::new(AlwaysOnSampler)
+            } else {
+                Box::new(opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(sample_rate))
+            }
+        }
     }
 }
 
@@ -771,21 +790,8 @@ impl ExportRuntime {
 
     #[cfg(any(feature = "grpc", feature = "http", feature = "datadog"))]
     fn create_tracer_exporter<E: opentelemetry_sdk::trace::SpanExporter + 'static>(self, exporter: E, config: opentelemetry_sdk::trace::BatchConfig, destination: &Destination<'_>, settings: &TraceSettings) -> SdkTracerProvider {
-        let sample_rate = settings.sample_rate.clamp(0.0, 1.0);
-        let mut builder = SdkTracerProvider::builder().with_id_generator(opentelemetry_sdk::trace::RandomIdGenerator::default());
-        if settings.respect_parent {
-            let sampler = opentelemetry_sdk::trace::Sampler::ParentBased(Box::new(opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(sample_rate)));
-            builder = builder.with_sampler(sampler);
-        } else {
-            if sample_rate == 0.0 {
-                builder = builder.with_sampler(AlwaysOffSampler);
-            } else if sample_rate == 1.0 {
-                builder = builder.with_sampler(AlwaysOnSampler);
-            } else {
-                let sampler = opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(sample_rate);
-                builder = builder.with_sampler(sampler);
-            }
-        }
+        let sampler = settings.create_sampler();
+        let mut builder = SdkTracerProvider::builder().with_id_generator(opentelemetry_sdk::trace::RandomIdGenerator::default()).with_sampler(sampler);
         builder = settings.limits.apply_to(builder);
         if let Some(attrs) = destination.get_service_attrs() {
             builder = builder.with_resource(attrs.0);

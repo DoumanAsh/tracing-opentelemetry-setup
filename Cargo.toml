@@ -1,6 +1,6 @@
 [package]
 name = "tracing-opentelemetry-setup"
-version = "0.7.16"
+version = "0.8.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Utilities to provide proper setup of tracing with OTEL export"
@@ -23,24 +23,24 @@ version = "0.3.22"
 default-features = false
 
 [dependencies.tracing-opentelemetry]
-version = "0.32"
+version = "0.33"
 default-features = false
 
 [dependencies.opentelemetry-appender-tracing]
-version = "0.31"
+version = "0.32"
 default-features = false
 
 [dependencies.opentelemetry]
-version = "0.31"
+version = "0.32"
 default-features = false
 
 [dependencies.opentelemetry_sdk]
-version = "0.31"
+version = "0.32"
 default-features = false
 features = ["logs", "trace"]
 
 [dependencies.opentelemetry-otlp]
-version = "0.31"
+version = "0.32"
 default-features = false
 features = ["logs", "trace"]
 
@@ -50,7 +50,7 @@ default-features = false
 optional = true
 
 [dependencies.metrics-opentelemetry]
-version = "0.24"
+version = "0.24032"
 optional = true
 
 [dependencies.http]
@@ -59,7 +59,7 @@ default-features = false
 optional = true
 
 [dependencies.opentelemetry-http]
-version = "0.31"
+version = "0.32"
 default-features = false
 optional = true
 
@@ -76,7 +76,7 @@ default-features = false
 optional = true
 
 [dependencies.opentelemetry-datadog]
-version = "0.19"
+version = "0.20"
 default-features = false
 optional = true
 # Only blocking client works with batch processor
@@ -124,7 +124,7 @@ grpc-compression = ["grpc", "opentelemetry-otlp/gzip-tonic"]
 grpc-tls = ["grpc", "opentelemetry-otlp/tls-roots"]
 
 # HTTP transport features
-http = ["opentelemetry-otlp/http-proto", "dep:http"]
+http = ["opentelemetry-otlp/http-proto", "opentelemetry-otlp/http-json", "dep:http"]
 http-compression = ["http", "opentelemetry-otlp/gzip-http"]
 http-tls = ["http", "opentelemetry-otlp/reqwest-rustls"]
 
@@ -137,6 +137,9 @@ http-ureq-tls = ["http-ureq", "ureq/rustls", "ureq/platform-verifier"]
 
 # Enable internal logs within opentelemetry
 internal-logs = ["opentelemetry/internal-logs", "opentelemetry_sdk/internal-logs", "opentelemetry-otlp/internal-logs"]
+
+# Enable experimental metrics feature to improve performance
+experimental_otel_metrics = ["metrics-opentelemetry/experimental_metrics_bound_instruments"]
 
 [package.metadata.docs.rs]
 features = ["metrics", "grpc", "http", "propagation", "panic", "datadog", "http-ureq", "tracing-metrics"]
