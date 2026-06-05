@@ -1163,7 +1163,12 @@ impl Builder {
     ///
     ///Returns layer that can be used to record traces
     pub fn with_trace<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(&mut self, destination: &Destination<'_>, settings: TraceSettings) -> impl tracing_subscriber::Layer<S> + use<S> {
-        tracing_opentelemetry::OpenTelemetryLayer::new(self.create_tracer(destination, settings))
+        tracing_opentelemetry::OpenTelemetryLayer::new(self.create_tracer(destination, settings)).with_level(true)
+                                                                                                 .with_target(true)
+                                                                                                 .with_tracked_inactivity(true)
+                                                                                                 .with_error_events_to_status(true)
+                                                                                                 .with_error_events_to_exceptions(true)
+                                                                                                 .with_error_records_to_exceptions(true)
     }
 
     #[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
