@@ -591,8 +591,42 @@ declare_trace_limits!({
 });
 
 #[allow(unused)]
+#[derive(Clone, Debug)]
+pub(crate) struct ParentBasedSampler<T> {
+    pub(crate) sampler: T,
+}
+
+impl<T: opentelemetry_sdk::trace::ShouldSample + Clone + 'static> opentelemetry_sdk::trace::ShouldSample for ParentBasedSampler<T> {
+    #[inline(always)]
+    fn should_sample(&self, parent_context: Option<&opentelemetry::Context>, trace_id: opentelemetry::TraceId, name: &str, span_kind: &opentelemetry::trace::SpanKind, attributes: &[opentelemetry::KeyValue], links: &[opentelemetry::trace::Link]) -> opentelemetry_sdk::trace::SamplingResult {
+        use opentelemetry::trace::TraceContextExt;
+        use opentelemetry_sdk::trace::SamplingDecision;
+
+        if let Some(active_parent) = parent_context.filter(|ctx| ctx.has_active_span()) {
+            //If user has active span, then follow parent's sampling decision
+            let parent_span = active_parent.span();
+            let parent_span_context = parent_span.span_context();
+            let decision = if parent_span_context.is_sampled() {
+                SamplingDecision::RecordAndSample
+            } else {
+                SamplingDecision::Drop
+            };
+
+            opentelemetry_sdk::trace::SamplingResult {
+                decision,
+                attributes: Vec::new(),
+                trace_state: parent_span_context.trace_state().clone(),
+            }
+        } else {
+            //With no active span present, always delegate to inner sampler
+            self.sampler.should_sample(parent_context, trace_id, name, span_kind, attributes, links)
+        }
+    }
+}
+
+#[allow(unused)]
 #[derive(Copy, Clone, Debug)]
-struct AlwaysOnSampler;
+pub(crate) struct AlwaysOnSampler;
 
 impl opentelemetry_sdk::trace::ShouldSample for AlwaysOnSampler {
     #[inline(always)]
@@ -612,7 +646,7 @@ impl opentelemetry_sdk::trace::ShouldSample for AlwaysOnSampler {
 
 #[allow(unused)]
 #[derive(Copy, Clone, Debug)]
-struct AlwaysOffSampler;
+pub(crate) struct AlwaysOffSampler;
 
 impl opentelemetry_sdk::trace::ShouldSample for AlwaysOffSampler {
     #[inline(always)]
@@ -701,7 +735,9 @@ impl TraceSettings {
     fn create_sampler(&self) -> Box<dyn opentelemetry_sdk::trace::ShouldSample> {
         let sample_rate = self.sample_rate.clamp(0.0, 1.0);
         if self.respect_parent {
-            Box::new(opentelemetry_sdk::trace::Sampler::ParentBased(Box::new(opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(sample_rate))))
+            Box::new(ParentBasedSampler {
+                sampler: opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(sample_rate)
+            })
         } else {
             if sample_rate == 0.0 {
                 Box::new(AlwaysOffSampler)
