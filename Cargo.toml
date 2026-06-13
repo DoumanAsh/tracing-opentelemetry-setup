@@ -50,7 +50,7 @@ default-features = false
 optional = true
 
 [dependencies.metrics-opentelemetry]
-version = "0.24032.1"
+version = "0.24032.5"
 optional = true
 
 [dependencies.http]
