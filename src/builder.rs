@@ -799,6 +799,11 @@ pub enum ExportRuntime {
 }
 
 impl ExportRuntime {
+    #[inline]
+    fn is_threaded(&self) -> bool {
+        matches!(self, Self::Threaded)
+    }
+
     #[cfg(any(feature = "grpc", feature = "http", feature = "datadog"))]
     fn create_logger_exporter<E: opentelemetry_sdk::logs::LogExporter + 'static>(self, exporter: E, config: opentelemetry_sdk::logs::BatchConfig, destination: &Destination<'_>) -> SdkLoggerProvider {
         let mut builder = SdkLoggerProvider::builder();
@@ -897,6 +902,78 @@ impl ExportRuntime {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+///Defines possible retry policy (if underlying exporter supports it)
+pub struct RetryPolicy {
+    max_retries: usize,
+    initial_delay_ms: u64,
+    max_delay_ms: u64,
+    jitter_ms: u64,
+}
+
+impl RetryPolicy {
+    ///Creates default policy with max 5 retries
+    pub const fn new() -> Self {
+        Self {
+            max_retries: 5,
+            initial_delay_ms: 500,
+            max_delay_ms: 30_000,
+            jitter_ms: 100,
+        }
+    }
+
+    ///Sets limit on number of retries. Defaults to 5
+    pub const fn with_max_retries(mut self, max_retries: usize) -> Self {
+        self.max_retries = max_retries;
+        self
+    }
+
+    ///Sets initial retry interval. Defaults to 500ms.
+    ///
+    ///Allows granularity within millisecond
+    pub const fn with_initial_delay(mut self, initial_delay: time::Duration) -> Self {
+        self.initial_delay_ms = initial_delay.as_millis() as _;
+        self
+    }
+
+    ///Sets maximum possible retry interval. Defaults to 30s.
+    ///
+    ///Allows granularity within millisecond
+    pub const fn with_max_delay(mut self, delay: time::Duration) -> Self {
+        self.max_delay_ms = delay.as_millis() as _;
+        self
+    }
+
+    ///Sets jitter on retry interval. Defaults to 100ms.
+    ///
+    ///Allows granularity within millisecond
+    pub const fn with_jitter(mut self, jitter: time::Duration) -> Self {
+        self.jitter_ms = jitter.as_millis() as _;
+        self
+    }
+}
+
+#[cfg(any(feature = "grpc-retry", feature = "http-retry"))]
+impl From<RetryPolicy> for opentelemetry_otlp::retry::RetryPolicy {
+
+    #[inline]
+    fn from(RetryPolicy { max_delay_ms, max_retries, initial_delay_ms, jitter_ms }: RetryPolicy) -> Self {
+        Self {
+            max_retries,
+            initial_delay_ms,
+            max_delay_ms,
+            jitter_ms,
+        }
+    }
+}
+
+impl Default for RetryPolicy {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 ///Opentelemetry integration builder
 pub struct Builder {
     otlp: Otlp,
@@ -908,6 +985,7 @@ pub struct Builder {
     #[cfg(feature = "http-ureq")]
     ureq: Option<crate::ureq::HttpClient>,
     runtime: ExportRuntime,
+    retry: RetryPolicy,
 }
 
 impl Builder {
@@ -917,13 +995,14 @@ impl Builder {
         Self {
             otlp: Otlp::new(),
             headers: Vec::new(),
-            timeout: time::Duration::from_secs(5),
+            timeout: time::Duration::from_secs(0),
             export_interval: time::Duration::ZERO,
             queue_size: 0,
             compression: true,
             #[cfg(feature = "http-ureq")]
             ureq: None,
             runtime: ExportRuntime::Threaded,
+            retry: RetryPolicy::new(),
         }
     }
 
@@ -959,7 +1038,9 @@ impl Builder {
     #[inline]
     ///Specify common timeout to be used by all OTLP exporters
     ///
-    ///Defaults to 5 seconds
+    ///Defaults to OTLP's default: 10s
+    ///
+    ///Can be overriden with env var `OTEL_EXPORTER_OTLP_TIMEOUT` or by using this method.
     pub fn with_timeout(mut self, timeout: time::Duration) -> Self {
         self.timeout = timeout;
         self
@@ -1003,8 +1084,39 @@ impl Builder {
         self
     }
 
+    ///Customizes retry policy.
+    ///
+    ///For OTLP requires to use tokio runtime, otherwise have no effect.
+    pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
+        self.retry = retry;
+        self
+    }
+
+    #[cfg(feature = "grpc")]
+    fn apply_otel_grpc_config<T: opentelemetry_otlp::WithTonicConfig + opentelemetry_otlp::WithExportConfig>(&self, mut builder: T) -> T {
+        if cfg!(feature = "grpc-compression") && self.compression {
+            builder = builder.with_compression(opentelemetry_otlp::Compression::Gzip)
+        }
+
+        if !self.headers.is_empty() {
+            let headers = create_metadata_map(&self.headers);
+            builder = builder.with_metadata(headers);
+        }
+
+        #[cfg(feature = "grpc-retry")]
+        if !self.runtime.is_threaded() {
+            builder = builder.with_retry_policy(self.retry.into());
+        }
+
+        if self.timeout.is_zero() {
+            builder
+        } else {
+            builder.with_timeout(self.timeout)
+        }
+    }
+
     #[cfg(feature = "http")]
-    fn apply_otel_http_config<T: opentelemetry_otlp::WithHttpConfig>(&self, mut builder: T) -> T {
+    fn apply_otel_http_config<T: opentelemetry_otlp::WithHttpConfig + opentelemetry_otlp::WithExportConfig>(&self, mut builder: T) -> T {
         if cfg!(feature = "http-compression") && self.compression {
             builder = builder.with_compression(opentelemetry_otlp::Compression::Gzip)
         }
@@ -1019,7 +1131,16 @@ impl Builder {
             builder = builder.with_headers(headers);
         }
 
-        builder
+        #[cfg(feature = "http-retry")]
+        if !self.runtime.is_threaded() {
+            builder = builder.with_retry_policy(self.retry.into());
+        }
+
+        if self.timeout.is_zero() {
+            builder
+        } else {
+            builder.with_timeout(self.timeout)
+        }
     }
 
     fn create_logs(&mut self, _destination: &Destination<'_>) -> opentelemetry_sdk::logs::SdkLoggerProvider {
@@ -1039,19 +1160,11 @@ impl Builder {
         let _logs = match _destination.protocol {
             #[cfg(feature = "grpc")]
             Protocol::Grpc => {
-                use opentelemetry_otlp::{WithTonicConfig, WithExportConfig};
+                use opentelemetry_otlp::{WithExportConfig};
                 let mut builder = opentelemetry_otlp::LogExporter::builder().with_tonic().with_endpoint(_destination.url.clone().into_owned());
 
-                if cfg!(feature = "grpc-compression") && self.compression {
-                    builder = builder.with_compression(opentelemetry_otlp::Compression::Gzip)
-                }
-
-                if !self.headers.is_empty() {
-                    let headers = create_metadata_map(&self.headers);
-                    builder = builder.with_metadata(headers);
-                }
-
-                let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize logs grpc exporter");
+                builder = self.apply_otel_grpc_config(builder);
+                let exporter = builder.build().expect("Failed to initialize logs grpc exporter");
                 self.runtime.create_logger_exporter(exporter, _batch_config, &_destination)
             },
             #[cfg(not(feature = "grpc"))]
@@ -1076,8 +1189,7 @@ impl Builder {
                 let mut builder = opentelemetry_otlp::LogExporter::builder().with_http().with_protocol(http.into_otel()).with_endpoint(url);
 
                 builder = self.apply_otel_http_config(builder);
-
-                let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize logs http exporter");
+                let exporter = builder.build().expect("Failed to initialize logs http exporter");
                 self.runtime.create_logger_exporter(exporter, _batch_config, _destination)
             },
             #[cfg(not(feature = "http"))]
@@ -1120,20 +1232,11 @@ impl Builder {
         let _trace = match _destination.protocol {
             #[cfg(feature = "grpc")]
             Protocol::Grpc => {
-                use opentelemetry_otlp::{WithTonicConfig, WithExportConfig};
+                use opentelemetry_otlp::{WithExportConfig};
                 let mut builder = opentelemetry_otlp::SpanExporter::builder().with_tonic().with_endpoint(_destination.url.clone().into_owned());
 
-                if cfg!(feature = "grpc-compression") && self.compression {
-                    builder = builder.with_compression(opentelemetry_otlp::Compression::Gzip)
-                }
-
-                if !self.headers.is_empty() {
-                    let headers = create_metadata_map(&self.headers);
-                    builder = builder.with_metadata(headers);
-                }
-
-
-                let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize trace grpc exporter");
+                builder = self.apply_otel_grpc_config(builder);
+                let exporter = builder.build().expect("Failed to initialize trace grpc exporter");
                 self.runtime.create_tracer_exporter(exporter, _batch_config, &_destination, &_settings)
             },
             #[cfg(not(feature = "grpc"))]
@@ -1174,7 +1277,7 @@ impl Builder {
                 let mut builder = opentelemetry_otlp::SpanExporter::builder().with_http().with_protocol(http.into_otel()).with_endpoint(url);
 
                 builder = self.apply_otel_http_config(builder);
-                let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize trace http exporter");
+                let exporter = builder.build().expect("Failed to initialize trace http exporter");
                 self.runtime.create_tracer_exporter(exporter, _batch_config, &_destination, &_settings)
             },
             #[cfg(not(feature = "http"))]
@@ -1216,19 +1319,11 @@ impl Builder {
         let _metrics = match _destination.protocol {
             #[cfg(feature = "grpc")]
             Protocol::Grpc => {
-                use opentelemetry_otlp::{WithTonicConfig, WithExportConfig};
+                use opentelemetry_otlp::{WithExportConfig};
                 let mut builder = opentelemetry_otlp::MetricExporter::builder().with_tonic().with_endpoint(_destination.url.clone().into_owned()).with_temporality(_settings.temporality);
 
-                if cfg!(feature = "grpc-compression") && self.compression {
-                    builder = builder.with_compression(opentelemetry_otlp::Compression::Gzip)
-                }
-
-                if !self.headers.is_empty() {
-                    let headers = create_metadata_map(&self.headers);
-                    builder = builder.with_metadata(headers);
-                }
-
-                let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize metrics grpc exporter");
+                builder = self.apply_otel_grpc_config(builder);
+                let exporter = builder.build().expect("Failed to initialize metrics grpc exporter");
                 self.runtime.create_metrics_exporter(exporter, &_destination, self.export_interval)
             },
             #[cfg(not(feature = "grpc"))]
@@ -1247,7 +1342,7 @@ impl Builder {
 
                 builder = self.apply_otel_http_config(builder);
 
-                let exporter = builder.with_timeout(self.timeout).build().expect("Failed to initialize metrics grpc exporter");
+                let exporter = builder.build().expect("Failed to initialize metrics grpc exporter");
                 self.runtime.create_metrics_exporter(exporter, &_destination, self.export_interval)
             },
             #[cfg(not(feature = "http"))]

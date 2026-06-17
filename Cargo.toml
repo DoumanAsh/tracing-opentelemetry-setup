@@ -1,6 +1,6 @@
 [package]
 name = "tracing-opentelemetry-setup"
-version = "0.8.2"
+version = "0.8.3"
 edition = "2024"
 rust-version = "1.85"
 description = "Utilities to provide proper setup of tracing with OTEL export"
@@ -122,11 +122,13 @@ datadog = ["serde", "time", "serde_json", "opentelemetry-datadog"]
 grpc = ["opentelemetry-otlp/grpc-tonic", "tonic"]
 grpc-compression = ["grpc", "opentelemetry-otlp/gzip-tonic"]
 grpc-tls = ["grpc", "opentelemetry-otlp/tls-roots"]
+grpc-retry = ["grpc", "rt-tokio", "opentelemetry-otlp/experimental-grpc-retry"]
 
 # HTTP transport features
 http = ["opentelemetry-otlp/http-proto", "opentelemetry-otlp/http-json", "dep:http"]
 http-compression = ["http", "opentelemetry-otlp/gzip-http"]
 http-tls = ["http", "opentelemetry-otlp/reqwest-rustls"]
+http-retry = ["http", "rt-tokio", "opentelemetry-otlp/experimental-http-retry"]
 
 # HTTP client selection
 http-reqwest-blocking = ["http", "opentelemetry-otlp/reqwest-blocking-client"]

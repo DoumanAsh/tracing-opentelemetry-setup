@@ -3,7 +3,7 @@
 [![Rust](https://github.com/DoumanAsh/tracing-opentelemetry-setup/actions/workflows/rust.yml/badge.svg)](https://github.com/DoumanAsh/tracing-opentelemetry-setup/actions/workflows/rust.yml)
 [![Crates.io](https://img.shields.io/crates/v/tracing-opentelemetry-setup.svg)](https://crates.io/crates/tracing-opentelemetry-setup)
 [![Documentation](https://docs.rs/tracing-opentelemetry-setup/badge.svg)](https://docs.rs/crate/tracing-opentelemetry-setup/)
-[![dependency status](https://deps.rs/crate/tracing-opentelemetry-setup/0.8.1/status.svg)](https://deps.rs/crate/tracing-opentelemetry-setup/0.8.1)
+[![dependency status](https://deps.rs/crate/tracing-opentelemetry-setup/0.8.3/status.svg)](https://deps.rs/crate/tracing-opentelemetry-setup/0.8.3)
 
 OpenTelemetry integration for tracing.
 
@@ -30,6 +30,7 @@ MSRV 1.85
 - `grpc` - Enables tonic based gRPC transport
 - `grpc-compression` - Enables tonic based gRPC transport with compression
 - `grpc-tls` - Enables tonic based gRPC transport with TLS
+- `grpc-retry` - Enables retry logic for grpc exporter. Requires `tokio` feature to be used
 
 ### HTTP features
 
@@ -38,6 +39,7 @@ Note that when enabling multiple clients, only one client will be used by defaul
 - `http` - Enables http exporter code without specific client as default option.
 - `http-compression` - Enables http transport with compression
 - `http-tls` - Enables http transport with TLS
+- `http-retry` - Enables retry logic for HTTP exporter. Requires `tokio` feature to be used
 
 - `http-reqwest-blocking` - Enables blocking reqwest client.
 - `http-reqwest` - Enables async reqwest client.
