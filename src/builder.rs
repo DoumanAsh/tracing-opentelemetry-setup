@@ -800,8 +800,27 @@ pub enum ExportRuntime {
 
 impl ExportRuntime {
     #[inline]
-    fn is_threaded(&self) -> bool {
+    ///Returns whether runtime is threaded
+    pub fn is_threaded(&self) -> bool {
         matches!(self, Self::Threaded)
+    }
+
+    ///Attempts to infer runtime.
+    ///
+    ///If `rt-tokio` feature enabled, it will attempt to fetch
+    ///[Handle](https://docs.rs/tokio/1.52.3/tokio/runtime/struct.Handle.html#method.try_current)
+    ///to determine runtime, otherwise it defaults to [ExportRuntime::Threaded]
+    pub fn auto_detect() -> Self {
+        #[cfg(feature = "rt-tokio")]
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            match handle.runtime_flavor() {
+                tokio::runtime::RuntimeFlavor::CurrentThread => return Self::TokioCurrentThrad,
+                tokio::runtime::RuntimeFlavor::MultiThread => return Self::Tokio,
+                _ => (),
+            }
+        }
+
+        Self::Threaded
     }
 
     #[cfg(any(feature = "grpc", feature = "http", feature = "datadog"))]

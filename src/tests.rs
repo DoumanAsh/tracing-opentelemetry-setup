@@ -69,8 +69,6 @@ fn should_use_parent_decision_if_not_sampled() {
 
 #[test]
 fn should_use_own_decision_if_no_parent() {
-    use opentelemetry::trace::TraceContextExt;
-
     let sampler = ParentBasedSampler {
         sampler: AlwaysOffSampler,
     };

@@ -54,7 +54,7 @@ Make sure `tracing-opentelemetry-setup` is installed to your dependencies
 
 ```rust
 use tracing_opentelemetry_setup::{Otlp, tracing_subscriber, tracing};
-use tracing_opentelemetry_setup::builder::{Destination, Protocol, Attributes, TraceSettings};
+use tracing_opentelemetry_setup::builder::{Destination, Protocol, Attributes, TraceSettings, ExportRuntime};
 
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -68,7 +68,7 @@ let destination = Destination {
 };
 
 //Create common OTLP settings
-let mut otlp = Otlp::builder().with_header("Authorization", "Basic <my token>");
+let mut otlp = Otlp::builder().with_runtime(ExportRuntime::auto_detect()).with_header("Authorization", "Basic <my token>");
 //Initialize subscriber
 let registry = tracing_subscriber::registry().with(otlp.with_trace(&destination, trace_settings)) //initializes tracing and return layer
                                              .with(otlp.with_logs(&destination)) //initializes logging and returns layer
