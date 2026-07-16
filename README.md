@@ -15,6 +15,7 @@ MSRV 1.85
 
 - `panic` - Provides panic hook implementation. Must be enabled via panic module
 - `propagation` - Enables propagation utilities
+- `propagation-aws` - Enables propagation utilities with support for [AWS XRay](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-request-tracing.html)
 - `metrics` - Enable integration with [metrics](https://crates.io/crates/metrics)
 - `tracing-metrics` - Enable metrics usage via [tracing-opentelemetry](https://docs.rs/tracing-opentelemetry/latest/tracing_opentelemetry/struct.MetricsLayer.html)
 - `rt-tokio` - Tell OpenTelemetry sdk that you use tokio runtime

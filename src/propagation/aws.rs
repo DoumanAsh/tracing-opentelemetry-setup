@@ -1,4 +1,6 @@
 //! Opentelemtry propagation support for AWS Load Balancer [XRay](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-request-tracing.html)
+//!
+//! This module requires feature `propagation-aws`
 
 use super::{Context, ParentSource, ParentDestination};
 use opentelemetry::trace::{TraceId, TraceFlags, TraceState, SpanId, SpanContext, TraceContextExt};
@@ -199,6 +201,8 @@ impl Context {
     ///
     ///You cannot initialize context using `tracing::instrument` so you always have to manually
     ///construct span (without entering into it) using one of `tracing::span!` macros
+    ///
+    ///Requires feature `propagation-aws`
     pub fn new_from_aws_parent(span: tracing::Span, source: impl ParentSource) -> (tracing::Span, Self) {
         use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -213,6 +217,8 @@ impl Context {
 
     #[inline(always)]
     ///Extracts Context from `source` linking it to the current span using [XRayPropagator] format.
+    ///
+    ///Requires feature `propagation-aws`
     pub fn add_aws_link_from(&self, source: impl ParentSource) -> &Self {
         if let Some(parent) = source.get(AWS_XRAY_TRACE_HEADER).and_then(extract_span_context) {
             self.inner_add_link(&parent);
@@ -223,6 +229,8 @@ impl Context {
 
     #[inline(always)]
     ///Extract `self` into `dest` using [XRayPropagator] format
+    ///
+    ///Requires feature `propagation-aws`
     pub fn inject_aws_into(&self, dest: &mut impl ParentDestination) {
         let span = self.context.span();
         let span_context = span.span_context();
