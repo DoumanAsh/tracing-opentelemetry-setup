@@ -1,6 +1,6 @@
 [package]
 name = "tracing-opentelemetry-setup"
-version = "0.8.4"
+version = "0.8.5"
 edition = "2024"
 rust-version = "1.85"
 description = "Utilities to provide proper setup of tracing with OTEL export"
@@ -99,11 +99,19 @@ version = "1.22"
 optional = true
 default-features = false
 
+# propagation-aws
+[dependencies.str-buf]
+version = "4"
+default-features = false
+optional = true
+
 [features]
 # Enables panic hook
 panic = []
 # Enables propagation utilities
 propagation = []
+# Enables propagation utilities with support for AWS XRay
+propagation-aws = ["propagation", "dep:str-buf"]
 # Enables metrics propagation via metrics crate
 metrics = ["opentelemetry_sdk/metrics", "opentelemetry-otlp/metrics", "metrics-opentelemetry"]
 # Enables metrics propagation via tracing-opentelemetry crate
@@ -150,4 +158,4 @@ internal-logs = ["opentelemetry/internal-logs", "opentelemetry_sdk/internal-logs
 experimental_otel_metrics = ["metrics-opentelemetry/experimental_metrics_bound_instruments"]
 
 [package.metadata.docs.rs]
-features = ["metrics", "grpc", "http", "propagation", "panic", "datadog", "http-ureq", "tracing-metrics"]
+features = ["metrics", "grpc", "http", "propagation-aws", "panic", "datadog", "http-ureq", "tracing-metrics"]

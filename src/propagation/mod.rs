@@ -6,6 +6,10 @@ use opentelemetry::trace::{Status, TraceContextExt};
 use opentelemetry::propagation::{Extractor, Injector, TextMapPropagator};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 
+
+#[cfg(feature = "propagation-aws")]
+pub mod aws;
+
 ///Interface to inject parent trace context
 ///
 ///```rust
@@ -338,6 +342,22 @@ impl Context {
         span.set_status(Status::Error {
             description: error.to_string().into()
         });
+    }
+
+    #[inline(always)]
+    fn inner_add_link(&self, ctx: &opentelemetry::trace::SpanContext) -> &Self {
+        if ctx.is_valid() {
+            self.context.span().add_link(ctx.clone(), Vec::new());
+        }
+        self
+    }
+
+    #[inline(always)]
+    ///Extracts Context from `source` linking it to the current span
+    pub fn add_link_from(&self, source: impl ParentSource) -> &Self {
+        let parent = TraceContextPropagator::new().extract(&ParentSourceImpl(source));
+        let span = parent.span();
+        self.inner_add_link(span.span_context())
     }
 
     #[inline(always)]
