@@ -879,7 +879,7 @@ impl ExportRuntime {
     }
 
     #[cfg(all(feature = "metrics", any(feature = "grpc", feature = "http")))]
-    fn create_metrics_exporter<E: opentelemetry_sdk::metrics::exporter::PushMetricExporter + 'static>(self, exporter: E, destination: &Destination<'_>, export_interval: time::Duration) -> opentelemetry_sdk::metrics::SdkMeterProvider {
+    fn create_metrics_exporter<E: opentelemetry_sdk::metrics::exporter::PushMetricExporter + 'static>(self, exporter: E, destination: &Destination<'_>, export_interval: time::Duration, _retry: RetryPolicy) -> opentelemetry_sdk::metrics::SdkMeterProvider {
         let mut builder = opentelemetry_sdk::metrics::SdkMeterProvider::builder();
         if let Some(attrs) = destination.get_service_attrs() {
             builder = builder.with_resource(attrs.0.clone());
@@ -897,7 +897,8 @@ impl ExportRuntime {
             },
             #[cfg(feature = "rt-tokio")]
             Self::Tokio => {
-                let mut reader = opentelemetry_sdk::metrics::periodic_reader_with_async_runtime::PeriodicReader::builder(exporter, opentelemetry_sdk::runtime::Tokio);
+                let export_timeout = _retry.runtime_max_delay("OTEL_METRIC_EXPORT_TIMEOUT");
+                let mut reader = opentelemetry_sdk::metrics::periodic_reader_with_async_runtime::PeriodicReader::builder(exporter, opentelemetry_sdk::runtime::Tokio).with_timeout(export_timeout);
 
                 if !export_interval.is_zero() {
                     reader = reader.with_interval(export_interval);
@@ -907,7 +908,8 @@ impl ExportRuntime {
             },
             #[cfg(feature = "rt-tokio")]
             Self::TokioCurrentThrad => {
-                let mut reader = opentelemetry_sdk::metrics::periodic_reader_with_async_runtime::PeriodicReader::builder(exporter, opentelemetry_sdk::runtime::TokioCurrentThread);
+                let export_timeout = _retry.runtime_max_delay("OTEL_METRIC_EXPORT_TIMEOUT");
+                let mut reader = opentelemetry_sdk::metrics::periodic_reader_with_async_runtime::PeriodicReader::builder(exporter, opentelemetry_sdk::runtime::TokioCurrentThread).with_timeout(export_timeout);
 
                 if !export_interval.is_zero() {
                     reader = reader.with_interval(export_interval);
@@ -969,6 +971,26 @@ impl RetryPolicy {
     pub const fn with_jitter(mut self, jitter: time::Duration) -> Self {
         self.jitter_ms = jitter.as_millis() as _;
         self
+    }
+
+    ///Calculates max possible delay using `self` as retry policy
+    pub const fn max_delay(&self) -> time::Duration {
+        let max_timeout = (self.max_retries as u64).saturating_mul(self.max_delay_ms);
+        time::Duration::from_millis(max_timeout)
+    }
+
+    #[cfg(feature = "rt-tokio")]
+    ///Current SDK is very much unreliable by default so we should use OTLP's retry policy to
+    ///automatically adjust export timeout unless user overrides it with
+    ///OTEL_BLRP_EXPORT_TIMEOUT/OTEL_BSP_EXPORT_TIMEOUT/OTEL_METRIC_EXPORT_TIMEOUT
+    fn runtime_max_delay(&self, env_key: &str) -> time::Duration {
+        if let Ok(timeout) = env::var(env_key) {
+            if let Ok(timeout) = timeout.trim().parse() {
+                return time::Duration::from_millis(timeout)
+            }
+        }
+
+        self.max_delay()
     }
 }
 
@@ -1174,6 +1196,9 @@ impl Builder {
         if self.queue_size != 0 {
             batch_config = batch_config.with_max_queue_size(self.queue_size);
         }
+        #[cfg(feature = "rt-tokio")] {
+            batch_config = batch_config.with_max_export_timeout(self.retry.runtime_max_delay("OTEL_BLRP_EXPORT_TIMEOUT"))
+        }
 
         let _batch_config = batch_config.build();
         let _logs = match _destination.protocol {
@@ -1245,6 +1270,9 @@ impl Builder {
         }
         if self.queue_size != 0 {
             batch_config = batch_config.with_max_queue_size(self.queue_size);
+        }
+        #[cfg(feature = "rt-tokio")] {
+            batch_config = batch_config.with_max_export_timeout(self.retry.runtime_max_delay("OTEL_BSP_EXPORT_TIMEOUT"))
         }
 
         let _batch_config = batch_config.build();
@@ -1343,7 +1371,7 @@ impl Builder {
 
                 builder = self.apply_otel_grpc_config(builder);
                 let exporter = builder.build().expect("Failed to initialize metrics grpc exporter");
-                self.runtime.create_metrics_exporter(exporter, &_destination, self.export_interval)
+                self.runtime.create_metrics_exporter(exporter, &_destination, self.export_interval, self.retry)
             },
             #[cfg(not(feature = "grpc"))]
             Protocol::Grpc => missing_grpc_feature(),
@@ -1362,7 +1390,7 @@ impl Builder {
                 builder = self.apply_otel_http_config(builder);
 
                 let exporter = builder.build().expect("Failed to initialize metrics grpc exporter");
-                self.runtime.create_metrics_exporter(exporter, &_destination, self.export_interval)
+                self.runtime.create_metrics_exporter(exporter, &_destination, self.export_interval, self.retry)
             },
             #[cfg(not(feature = "http"))]
             _ => missing_http_feature(),
