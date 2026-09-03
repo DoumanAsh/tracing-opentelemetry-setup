@@ -933,23 +933,24 @@ pub struct RetryPolicy {
 }
 
 impl RetryPolicy {
-    ///Creates default policy with max 5 retries
+    ///Creates default policy with max 10 retries
     pub const fn new() -> Self {
+        //This settings are based on SDK's defaults, but with a bit more resilience in mind
         Self {
-            max_retries: 5,
-            initial_delay_ms: 500,
-            max_delay_ms: 30_000,
+            max_retries: 10,
+            initial_delay_ms: 100,
+            max_delay_ms: 5_000,
             jitter_ms: 100,
         }
     }
 
-    ///Sets limit on number of retries. Defaults to 5
+    ///Sets limit on number of retries. Defaults to 10
     pub const fn with_max_retries(mut self, max_retries: usize) -> Self {
         self.max_retries = max_retries;
         self
     }
 
-    ///Sets initial retry interval. Defaults to 500ms.
+    ///Sets initial retry interval. Defaults to 100ms.
     ///
     ///Allows granularity within millisecond
     pub const fn with_initial_delay(mut self, initial_delay: time::Duration) -> Self {
@@ -957,7 +958,7 @@ impl RetryPolicy {
         self
     }
 
-    ///Sets maximum possible retry interval. Defaults to 30s.
+    ///Sets maximum possible retry interval. Defaults to 5s.
     ///
     ///Allows granularity within millisecond
     pub const fn with_max_delay(mut self, delay: time::Duration) -> Self {
