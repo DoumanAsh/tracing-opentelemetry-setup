@@ -991,7 +991,10 @@ impl RetryPolicy {
             }
         }
 
-        self.max_delay()
+        //Default timeout + all possible delays
+        //Generally if network is in bad condition, you will detect sooner rather than later,
+        //unless you have rate limit on your server
+        time::Duration::from_secs(30) + self.max_delay()
     }
 }
 
