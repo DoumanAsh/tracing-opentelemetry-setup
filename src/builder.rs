@@ -30,20 +30,6 @@ fn create_metadata_map(headers: &[(String, String)]) -> tonic::metadata::Metadat
     result
 }
 
-#[cfg(all(feature = "datadog", any(feature = "metrics", feature = "tracing-metrics")))]
-#[cold]
-#[inline(never)]
-fn unsupported_datadog_feature() -> ! {
-    panic!("Attempt to use 'datadog' while it doesn't support metrics functionality")
-}
-
-#[cfg(not(feature = "datadog"))]
-#[cold]
-#[inline(never)]
-fn missing_datadog_feature() -> ! {
-    panic!("Attempt to use 'datadog' when corresponding feature is not enabled")
-}
-
 #[cfg(not(feature = "grpc"))]
 #[cold]
 #[inline(never)]
@@ -408,25 +394,6 @@ pub enum Protocol {
     HttpBinary,
     ///HTTP
     HttpJson,
-    ///Datadog agent exporter
-    ///
-    ///In case of traces expects valid network address to send data
-    ///
-    ///In case of logs it can be `file://<full path>` to specify path to append logs. Otherwise `url` is ignored and `stdout` shall be used.
-    ///Note that you're advised to disable attachment of events/logs to the span in this case
-    ///
-    ///## Error tracking
-    ///
-    ///For purpose of error tracking, logger printer makes adjustments to the output in following way:
-    ///- `service.name` becomes `service`
-    ///- `deployment.environment.name` becomes `env`
-    ///- `service.version` becomes `version
-    ///- Most fields of the record are prefixed with `field.` except:
-    ///    - `status` is recorded as it is. If not present, it will be mapped as `ALERT` for `error`, `ERROR` for `warn or `INFO` for info
-    ///    - `error.kind` is recorded as it is. If not present, it will be mapped to `error` or `warn` for corresponding log severity
-    ///    - `error.stack` is recorded as it is
-    ///    - `error.message` is recorded as it is. If not present, it will be recorded for `error` or `warn`
-    DatadogAgent,
 }
 
 impl Protocol {
@@ -435,7 +402,6 @@ impl Protocol {
     ///Priority:
     ///- `HttpBinary`
     ///- `Grpc`
-    ///- `DatadogAgent`
     ///
     ///Returns `None` if no feature is available
     pub fn select_default() -> Option<Self> {
@@ -443,8 +409,6 @@ impl Protocol {
             Some(Self::HttpBinary)
         } else if cfg!(feature = "grpc") {
             Some(Self::Grpc)
-        } else if cfg!(feature = "datadog") {
-            Some(Self::DatadogAgent)
         } else {
             None
         }
@@ -456,7 +420,6 @@ impl Protocol {
     ///- `grpc`
     ///- `http/protobuf`
     ///- `http/json`
-    ///- `datadog`
     ///
     ///Returns `None` if no env variable is available or doesn't match available protocols
     pub fn from_env() -> Option<Self> {
@@ -470,9 +433,6 @@ impl Protocol {
                 }
                 if protocol == "http/json" {
                     return Some(Self::HttpJson);
-                }
-                if protocol == "datadog" {
-                    return Some(Self::DatadogAgent);
                 }
 
                 None
@@ -514,7 +474,7 @@ pub struct Destination<'a> {
 }
 
 impl Destination<'_> {
-    #[cfg_attr(not(all(feature = "grpc", feature = "http", feature = "datadog")), allow(unused))]
+    #[cfg_attr(not(all(feature = "grpc", feature = "http")), allow(unused))]
     fn get_service_attrs(&self) -> Option<Attributes> {
         match self.attributes {
             Some(attrs) => Some(attrs.clone()),
@@ -536,7 +496,6 @@ impl Destination<'static> {
             Err(_) => match protocol {
                 Protocol::Grpc => "http://localhost:4317".into(),
                 Protocol::HttpBinary | Protocol::HttpJson => "http://localhost:4318".into(),
-                Protocol::DatadogAgent => "http://localhost:8126".into()
             }
         };
 
@@ -731,7 +690,7 @@ impl TraceSettings {
     }
 
     #[inline]
-    #[cfg(any(feature = "grpc", feature = "http", feature = "datadog"))]
+    #[cfg(any(feature = "grpc", feature = "http"))]
     fn create_sampler(&self) -> Box<dyn opentelemetry_sdk::trace::ShouldSample> {
         let sample_rate = self.sample_rate.clamp(0.0, 1.0);
         if self.respect_parent {
@@ -823,7 +782,7 @@ impl ExportRuntime {
         Self::Threaded
     }
 
-    #[cfg(any(feature = "grpc", feature = "http", feature = "datadog"))]
+    #[cfg(any(feature = "grpc", feature = "http"))]
     fn create_logger_exporter<E: opentelemetry_sdk::logs::LogExporter + 'static>(self, exporter: E, config: opentelemetry_sdk::logs::BatchConfig, destination: &Destination<'_>) -> SdkLoggerProvider {
         let mut builder = SdkLoggerProvider::builder();
         if let Some(attrs) = destination.get_service_attrs() {
@@ -849,7 +808,7 @@ impl ExportRuntime {
         }
     }
 
-    #[cfg(any(feature = "grpc", feature = "http", feature = "datadog"))]
+    #[cfg(any(feature = "grpc", feature = "http"))]
     fn create_tracer_exporter<E: opentelemetry_sdk::trace::SpanExporter + 'static>(self, exporter: E, config: opentelemetry_sdk::trace::BatchConfig, destination: &Destination<'_>, settings: &TraceSettings) -> SdkTracerProvider {
         let sampler = settings.create_sampler();
         let mut builder = SdkTracerProvider::builder().with_id_generator(opentelemetry_sdk::trace::RandomIdGenerator::default()).with_sampler(sampler);
@@ -1218,18 +1177,6 @@ impl Builder {
             #[cfg(not(feature = "grpc"))]
             Protocol::Grpc => missing_grpc_feature(),
 
-            #[cfg(feature = "datadog")]
-            Protocol::DatadogAgent => {
-                let attributes = _destination.get_service_attrs();
-                if let Some(file_path) = _destination.url.strip_prefix("file://") {
-                    self.runtime.create_logger_exporter(crate::datadog::file_exporter(file_path.to_owned().into()).with_attrs(attributes), _batch_config, &_destination)
-                } else {
-                    self.runtime.create_logger_exporter(crate::datadog::stdout_exporter().with_attrs(attributes), _batch_config, &_destination)
-                }
-            }
-            #[cfg(not(feature = "datadog"))]
-            Protocol::DatadogAgent => missing_datadog_feature(),
-
             #[cfg(feature = "http")]
             http => {
                 use opentelemetry_otlp::WithExportConfig;
@@ -1244,7 +1191,7 @@ impl Builder {
             _ => missing_http_feature(),
         };
 
-        #[cfg(any(feature = "grpc", feature = "http", feature = "datadog"))]
+        #[cfg(any(feature = "grpc", feature = "http"))]
         {
             let this = self;
             this.otlp.logs = Some(_logs.clone());
@@ -1293,34 +1240,6 @@ impl Builder {
             #[cfg(not(feature = "grpc"))]
             Protocol::Grpc => missing_grpc_feature(),
 
-            #[cfg(feature = "datadog")]
-            Protocol::DatadogAgent => {
-                use crate::datadog::{SERVICE_NAME, SERVICE_VERSION, SERVICE_ENV};
-                let mut exporter = opentelemetry_datadog::new_pipeline().with_agent_endpoint(_destination.url.clone());
-
-                if let Some(attrs) = _destination.get_service_attrs() {
-                    if let Some(service_name) = attrs.0.get(&SERVICE_NAME) {
-                        exporter = exporter.with_service_name(service_name.to_string());
-                    }
-                    if let Some(service_version) = attrs.0.get(&SERVICE_VERSION) {
-                        exporter = exporter.with_version(service_version.to_string());
-                    }
-                    if let Some(service_env) = attrs.0.get(&SERVICE_ENV) {
-                        exporter = exporter.with_env(service_env.to_string());
-                    }
-                }
-
-                #[cfg(feature = "http-ureq")]
-                if let Some(ureq) = self.ureq.as_ref() {
-                    exporter = exporter.with_http_client(ureq.clone());
-                }
-
-                let exporter = exporter.build_exporter().expect("Failed to initialize datadog exporter");
-                self.runtime.create_tracer_exporter(exporter, _batch_config, &_destination, &_settings)
-            },
-            #[cfg(not(feature = "datadog"))]
-            Protocol::DatadogAgent => missing_datadog_feature(),
-
             #[cfg(feature = "http")]
             http => {
                 use opentelemetry_otlp::WithExportConfig;
@@ -1335,7 +1254,7 @@ impl Builder {
             _ => missing_http_feature(),
         };
 
-        #[cfg(any(feature = "grpc", feature = "http", feature = "datadog"))]
+        #[cfg(any(feature = "grpc", feature = "http"))]
         {
             use opentelemetry::trace::TracerProvider;
 
@@ -1379,11 +1298,6 @@ impl Builder {
             },
             #[cfg(not(feature = "grpc"))]
             Protocol::Grpc => missing_grpc_feature(),
-
-            #[cfg(feature = "datadog")]
-            Protocol::DatadogAgent => unsupported_datadog_feature(),
-            #[cfg(not(feature = "datadog"))]
-            Protocol::DatadogAgent => missing_datadog_feature(),
 
             #[cfg(feature = "http")]
             http => {
