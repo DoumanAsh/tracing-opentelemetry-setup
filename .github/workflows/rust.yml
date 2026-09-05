@@ -24,4 +24,5 @@ jobs:
     with:
       min-rustc-version: "1.85.0"
       cargo-no-features: true
-      cargo-features: "http-reqwest-blocking,metrics,propagation-aws,panic,datadog,http-ureq"
+      cargo-all-features: true
+      cargo-features: "http-reqwest-blocking,metrics,propagation-aws,panic,http-ureq"

@@ -22,10 +22,6 @@ MSRV 1.85
 - `tracing-log` - Enables `tracing-log` feature across all `tracing` ecosystem used by this crate.
 - `internal-logs` - Enables `internal-logs` feature across opentelemetry crates.
 
-### Non-standard exporters
-
-- `datadog` - Enables datadog agent exporter. Currently supports only traces & logs
-
 ### Grpc features
 
 - `grpc` - Enables tonic based gRPC transport
@@ -81,3 +77,9 @@ let _guard = registry.set_default();
 //Do your job then shutdown to make sure you flush everything
 otlp.shutdown(None).expect("successfully shut down OTLP")
 ```
+
+### Datadog usage
+
+While datadog provides own protocol, it is extremely well supportive of the OTLP protocol:
+- Documentation: https://docs.datadoghq.com/opentelemetry/setup/otlp_ingest_in_the_agent/?tab=host
+- Reference terraform module: https://github.com/DoumanAsh/datadog-tf/tree/master/modules/agent

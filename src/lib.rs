@@ -4,8 +4,6 @@
 
 #[cfg(feature = "http-ureq")]
 mod ureq;
-#[cfg(feature = "datadog")]
-mod datadog;
 #[cfg(feature = "panic")]
 pub mod panic;
 #[cfg(feature = "propagation")]

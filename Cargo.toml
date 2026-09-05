@@ -69,31 +69,6 @@ version = "3"
 default-features = false
 optional = true
 
-# Datadog related deps
-[dependencies.serde]
-version = "1"
-default-features = false
-optional = true
-
-[dependencies.opentelemetry-datadog]
-version = "0.20"
-default-features = false
-optional = true
-# Only blocking client works with batch processor
-features = ["intern-ahash", "reqwest-blocking-client"]
-
-[dependencies.time]
-version = "0.3"
-default-features = false
-optional = true
-features = ["formatting"]
-
-[dependencies.serde_json]
-version = "1"
-default-features = false
-features = ["std"]
-optional = true
-
 [dependencies.tokio]
 version = "1.22"
 optional = true
@@ -129,9 +104,6 @@ rt-tokio = [
 # Propagates `tracing-log` feature
 tracing-log = ["tracing-opentelemetry/tracing-log", "tracing-subscriber/tracing-log"]
 
-# non-standard exporters
-datadog = ["serde", "time", "serde_json", "opentelemetry-datadog"]
-
 # gRPC transport features
 grpc = ["opentelemetry-otlp/grpc-tonic", "tonic"]
 grpc-compression = ["grpc", "opentelemetry-otlp/gzip-tonic"]
@@ -158,4 +130,4 @@ internal-logs = ["opentelemetry/internal-logs", "opentelemetry_sdk/internal-logs
 experimental_otel_metrics = ["metrics-opentelemetry/experimental_metrics_bound_instruments"]
 
 [package.metadata.docs.rs]
-features = ["metrics", "grpc", "http", "propagation-aws", "panic", "datadog", "http-ureq", "tracing-metrics"]
+features = ["metrics", "grpc", "http", "propagation-aws", "panic", "http-ureq", "tracing-metrics"]
