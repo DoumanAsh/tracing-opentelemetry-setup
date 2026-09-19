@@ -1128,7 +1128,7 @@ impl Builder {
     ///Specifies common interval to perform data export for all OTLP exporters
     ///
     ///Unless specified, this interval will be default initialized by opentelemetry-sdk optionally using following environment variables:
-    ///- OTEL_BLRP_SCHEDULE_DELAY - Specifies interval between two log batches.
+    ///- OTEL_BLRP_EXPORT_TIMEOUT - Specifies interval between two log batches.
     ///- OTEL_BSP_EXPORT_TIMEOUT - Specifies interval between two trace batches.
     ///- OTEL_METRIC_EXPORT_INTERVAL - Specifies interval between metric exports.
     pub fn with_interval(mut self, interval: time::Duration) -> Self {
