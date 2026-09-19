@@ -624,11 +624,27 @@ impl opentelemetry_sdk::trace::ShouldSample for AlwaysOffSampler {
 }
 
 ///Trace configuration
+///
+///Default sampler configuration can be overriden by providing `OTEL_TRACES_SAMPLER` and `OTEL_TRACES_SAMPLER_ARG`
+///
+///Possible values for OTEL_TRACES_SAMPLER:
+///- `always_on`
+///- `always_off`
+///- `traceidratio`
+///- `parentbased_always_on`
+///- `parentbased_always_off`
+///- `parentbased_traceidratio`
+///
+///`OTEL_TRACES_SAMPLER_ARG` must valid float number
+///
+///In case of invalid env values, invalid configuration will be overriden with fallback provided in [TraceSettings]
 pub struct TraceSettings {
     #[allow(unused)]
     name: Cow<'static, str>,
     #[allow(unused)]
     ///Sample ratio to apply to all traces (unless parent overrides it)
+    ///
+    ///Can be overriden by OTEL_TRACES_SAMPLER_ARG
     sample_rate: f64,
     #[allow(unused)]
     limits: SpanLimits,
@@ -691,8 +707,17 @@ impl TraceSettings {
 
     #[inline]
     #[cfg(any(feature = "grpc", feature = "http"))]
-    fn create_sampler(&self) -> Box<dyn opentelemetry_sdk::trace::ShouldSample> {
-        let sample_rate = self.sample_rate.clamp(0.0, 1.0);
+    fn get_sample_rate(&self) -> f64 {
+        match env::var("OTEL_TRACES_SAMPLER_ARG").ok().and_then(|value| value.parse().ok()) {
+            None => self.sample_rate.clamp(0.0, 1.0),
+            Some(sample_rate) => sample_rate,
+        }
+    }
+
+    #[inline]
+    #[cfg(any(feature = "grpc", feature = "http"))]
+    fn fallback_sampler(&self) -> Box<dyn opentelemetry_sdk::trace::ShouldSample> {
+        let sample_rate = self.get_sample_rate();
         if self.respect_parent {
             Box::new(ParentBasedSampler {
                 sampler: opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(sample_rate)
@@ -706,6 +731,46 @@ impl TraceSettings {
                 Box::new(opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(sample_rate))
             }
         }
+    }
+
+    #[inline]
+    #[cfg(any(feature = "grpc", feature = "http"))]
+    fn create_sampler(&self) -> Box<dyn opentelemetry_sdk::trace::ShouldSample> {
+        //Allow override settings using OTEL env variables, unless it is invalid option, then default to user's configured defaults
+        if let Ok(sampler) = env::var("OTEL_TRACES_SAMPLER") {
+            let (respect_parent, sampler) = match sampler.strip_prefix("parentbased_") {
+                Some(sampler) => (true, sampler),
+                None => (false, sampler.as_str())
+            };
+            match sampler {
+                "always_on" => if respect_parent {
+                    return Box::new(ParentBasedSampler {
+                        sampler: AlwaysOnSampler
+                    })
+                } else {
+                    return Box::new(AlwaysOnSampler)
+                },
+                "always_off" => if respect_parent {
+                    return Box::new(ParentBasedSampler {
+                        sampler: AlwaysOffSampler
+                    })
+                } else {
+                    return Box::new(AlwaysOffSampler)
+                },
+                "traceidratio" => if respect_parent {
+                    return Box::new(ParentBasedSampler {
+                        sampler: opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(self.get_sample_rate())
+                    })
+                } else {
+                    return Box::new(opentelemetry_sdk::trace::Sampler::TraceIdRatioBased(self.get_sample_rate()));
+                },
+                unknown => {
+                    opentelemetry::otel_warn!(name: "Tracing.Opentelemetry.Setup", message = format!("Invalid OTEL_TRACES_SAMPLER='{unknown}' is supplied. Fallback to default settings"));
+                }
+            }
+        }
+
+        self.fallback_sampler()
     }
 }
 

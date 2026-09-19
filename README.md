@@ -80,6 +80,6 @@ otlp.shutdown(None).expect("successfully shut down OTLP")
 
 ### Datadog usage
 
-While datadog provides own protocol, it is extremely well supportive of the OTLP protocol:
+While datadog provides own protocol, it is extremely well supportive of the OTLP protocol hence I recommended to use OTLP with datadog:
 - Documentation: https://docs.datadoghq.com/opentelemetry/setup/otlp_ingest_in_the_agent/?tab=host
 - Reference terraform module: https://github.com/DoumanAsh/datadog-tf/tree/master/modules/agent
