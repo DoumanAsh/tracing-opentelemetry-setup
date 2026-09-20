@@ -1022,7 +1022,7 @@ impl RetryPolicy {
     }
 }
 
-#[cfg(any(feature = "grpc-retry", feature = "http-retry"))]
+#[cfg(feature = "rt-tokio")]
 impl From<RetryPolicy> for opentelemetry_otlp::retry::RetryPolicy {
 
     #[inline]
@@ -1172,7 +1172,7 @@ impl Builder {
             builder = builder.with_metadata(headers);
         }
 
-        #[cfg(feature = "grpc-retry")]
+        #[cfg(feature = "rt-tokio")]
         if !self.runtime.is_threaded() {
             builder = builder.with_retry_policy(self.retry.into());
         }
@@ -1200,7 +1200,7 @@ impl Builder {
             builder = builder.with_headers(headers);
         }
 
-        #[cfg(feature = "http-retry")]
+        #[cfg(feature = "rt-tokio")]
         if !self.runtime.is_threaded() {
             builder = builder.with_retry_policy(self.retry.into());
         }

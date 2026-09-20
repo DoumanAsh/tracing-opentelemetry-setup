@@ -99,6 +99,10 @@ rt-tokio = [
     "opentelemetry_sdk/experimental_logs_batch_log_processor_with_async_runtime",
     "opentelemetry_sdk/experimental_trace_batch_span_processor_with_async_runtime",
     "opentelemetry_sdk/experimental_metrics_periodicreader_with_async_runtime",
+
+    # to be removed with otel 0.33
+    "opentelemetry-otlp/experimental-grpc-retry",
+    "opentelemetry-otlp/experimental-http-retry",
 ]
 
 # Propagates `tracing-log` feature
@@ -108,13 +112,11 @@ tracing-log = ["tracing-opentelemetry/tracing-log", "tracing-subscriber/tracing-
 grpc = ["opentelemetry-otlp/grpc-tonic", "tonic"]
 grpc-compression = ["grpc", "opentelemetry-otlp/gzip-tonic"]
 grpc-tls = ["grpc", "opentelemetry-otlp/tls-roots"]
-grpc-retry = ["grpc", "rt-tokio", "opentelemetry-otlp/experimental-grpc-retry"]
 
 # HTTP transport features
 http = ["opentelemetry-otlp/http-proto", "opentelemetry-otlp/http-json", "dep:http"]
 http-compression = ["http", "opentelemetry-otlp/gzip-http"]
 http-tls = ["http", "opentelemetry-otlp/reqwest-rustls"]
-http-retry = ["http", "rt-tokio", "opentelemetry-otlp/experimental-http-retry"]
 
 # HTTP client selection
 http-reqwest-blocking = ["http", "opentelemetry-otlp/reqwest-blocking-client"]
