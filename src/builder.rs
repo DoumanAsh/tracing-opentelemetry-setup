@@ -951,9 +951,9 @@ impl ExportRuntime {
 ///Defines possible retry policy (if underlying exporter supports it)
 pub struct RetryPolicy {
     max_retries: usize,
-    initial_delay_ms: u64,
-    max_delay_ms: u64,
-    jitter_ms: u64,
+    initial_delay: time::Duration,
+    max_delay: time::Duration,
+    jitter: time::Duration,
 }
 
 impl RetryPolicy {
@@ -962,9 +962,9 @@ impl RetryPolicy {
         //This settings are based on SDK's defaults, but with a bit more resilience in mind
         Self {
             max_retries: 10,
-            initial_delay_ms: 100,
-            max_delay_ms: 5_000,
-            jitter_ms: 100,
+            initial_delay: time::Duration::from_millis(100),
+            max_delay: time::Duration::from_millis(5_000),
+            jitter: time::Duration::from_millis(100),
         }
     }
 
@@ -978,7 +978,7 @@ impl RetryPolicy {
     ///
     ///Allows granularity within millisecond
     pub const fn with_initial_delay(mut self, initial_delay: time::Duration) -> Self {
-        self.initial_delay_ms = initial_delay.as_millis() as _;
+        self.initial_delay = initial_delay;
         self
     }
 
@@ -986,7 +986,7 @@ impl RetryPolicy {
     ///
     ///Allows granularity within millisecond
     pub const fn with_max_delay(mut self, delay: time::Duration) -> Self {
-        self.max_delay_ms = delay.as_millis() as _;
+        self.max_delay = delay;
         self
     }
 
@@ -994,13 +994,13 @@ impl RetryPolicy {
     ///
     ///Allows granularity within millisecond
     pub const fn with_jitter(mut self, jitter: time::Duration) -> Self {
-        self.jitter_ms = jitter.as_millis() as _;
+        self.jitter = jitter;
         self
     }
 
     ///Calculates max possible delay using `self` as retry policy
     pub const fn max_delay(&self) -> time::Duration {
-        let max_timeout = (self.max_retries as u64).saturating_mul(self.max_delay_ms);
+        let max_timeout = (self.max_retries as u64).saturating_mul(self.max_delay.as_millis() as _);
         time::Duration::from_millis(max_timeout)
     }
 
@@ -1023,16 +1023,14 @@ impl RetryPolicy {
 }
 
 #[cfg(feature = "rt-tokio")]
-impl From<RetryPolicy> for opentelemetry_otlp::retry::RetryPolicy {
+impl From<RetryPolicy> for opentelemetry_otlp::RetryPolicy {
 
     #[inline]
-    fn from(RetryPolicy { max_delay_ms, max_retries, initial_delay_ms, jitter_ms }: RetryPolicy) -> Self {
-        Self {
-            max_retries,
-            initial_delay_ms,
-            max_delay_ms,
-            jitter_ms,
-        }
+    fn from(RetryPolicy { max_delay, max_retries, initial_delay, jitter}: RetryPolicy) -> Self {
+        opentelemetry_otlp::RetryPolicy::disabled().with_max_retries(max_retries)
+                                                   .with_initial_delay(initial_delay)
+                                                   .with_max_delay(max_delay)
+                                                   .with_max_jitter(jitter)
     }
 }
 

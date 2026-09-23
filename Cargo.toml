@@ -23,24 +23,24 @@ version = "0.3.22"
 default-features = false
 
 [dependencies.tracing-opentelemetry]
-version = "0.33"
+version = "0.34"
 default-features = false
 
 [dependencies.opentelemetry-appender-tracing]
-version = "0.32"
+version = "0.33"
 default-features = false
 
 [dependencies.opentelemetry]
-version = "0.32"
+version = "0.33"
 default-features = false
 
 [dependencies.opentelemetry_sdk]
-version = "0.32"
+version = "0.33"
 default-features = false
 features = ["logs", "trace"]
 
 [dependencies.opentelemetry-otlp]
-version = "0.32"
+version = "0.33"
 default-features = false
 features = ["logs", "trace"]
 
@@ -50,7 +50,7 @@ default-features = false
 optional = true
 
 [dependencies.metrics-opentelemetry]
-version = "0.24032.5"
+version = "0.24033.1"
 optional = true
 
 [dependencies.http]
@@ -59,7 +59,7 @@ default-features = false
 optional = true
 
 [dependencies.opentelemetry-http]
-version = "0.32"
+version = "0.33"
 default-features = false
 optional = true
 
@@ -99,10 +99,6 @@ rt-tokio = [
     "opentelemetry_sdk/experimental_logs_batch_log_processor_with_async_runtime",
     "opentelemetry_sdk/experimental_trace_batch_span_processor_with_async_runtime",
     "opentelemetry_sdk/experimental_metrics_periodicreader_with_async_runtime",
-
-    # to be removed with otel 0.33
-    "opentelemetry-otlp/experimental-grpc-retry",
-    "opentelemetry-otlp/experimental-http-retry",
 ]
 
 # Propagates `tracing-log` feature
