@@ -1022,6 +1022,7 @@ impl RetryPolicy {
     }
 }
 
+#[cfg(any(feature = "grpc", feature = "http"))]
 impl From<RetryPolicy> for opentelemetry_otlp::RetryPolicy {
 
     #[inline]
