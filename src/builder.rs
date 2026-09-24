@@ -1022,15 +1022,14 @@ impl RetryPolicy {
     }
 }
 
-#[cfg(feature = "rt-tokio")]
 impl From<RetryPolicy> for opentelemetry_otlp::RetryPolicy {
 
     #[inline]
     fn from(RetryPolicy { max_delay, max_retries, initial_delay, jitter}: RetryPolicy) -> Self {
-        opentelemetry_otlp::RetryPolicy::disabled().with_max_retries(max_retries)
-                                                   .with_initial_delay(initial_delay)
-                                                   .with_max_delay(max_delay)
-                                                   .with_max_jitter(jitter)
+        opentelemetry_otlp::RetryPolicy::recommended().with_max_retries(max_retries)
+                                                      .with_initial_delay(initial_delay)
+                                                      .with_max_delay(max_delay)
+                                                      .with_max_jitter(jitter)
     }
 }
 
@@ -1170,7 +1169,6 @@ impl Builder {
             builder = builder.with_metadata(headers);
         }
 
-        #[cfg(feature = "rt-tokio")]
         if !self.runtime.is_threaded() {
             builder = builder.with_retry_policy(self.retry.into());
         }
@@ -1198,7 +1196,6 @@ impl Builder {
             builder = builder.with_headers(headers);
         }
 
-        #[cfg(feature = "rt-tokio")]
         if !self.runtime.is_threaded() {
             builder = builder.with_retry_policy(self.retry.into());
         }
