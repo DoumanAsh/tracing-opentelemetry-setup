@@ -1050,7 +1050,7 @@ pub struct Builder {
     queue_size: usize,
     compression: bool,
     #[cfg(feature = "http-ureq")]
-    ureq: Option<crate::ureq::HttpClient>,
+    ureq: Option<std::sync::Arc<crate::ureq::HttpClient>>,
     runtime: ExportRuntime,
     retry: RetryPolicy,
 }
@@ -1078,7 +1078,7 @@ impl Builder {
     ///
     ///Requires `http-ureq` feature enabled
     pub fn with_ureq_http_client_shared(mut self, ureq: crate::ureq::HttpClient) -> Self {
-        self.ureq = Some(ureq);
+        self.ureq = Some(std::sync::Arc::new(ureq));
         self
     }
 
@@ -1189,7 +1189,7 @@ impl Builder {
 
         #[cfg(feature = "http-ureq")]
         if let Some(ureq) = self.ureq.as_ref() {
-            builder = builder.with_http_client(ureq.clone());
+            builder = builder.with_shared_http_client(ureq.clone());
         }
 
         if !self.headers.is_empty() {
