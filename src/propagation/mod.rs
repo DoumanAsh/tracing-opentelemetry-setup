@@ -2,7 +2,7 @@
 
 use core::{fmt, marker};
 
-use opentelemetry::trace::{Status, TraceContextExt};
+use opentelemetry::trace::{Status, TraceId, TraceContextExt};
 use opentelemetry::propagation::{Extractor, Injector, TextMapPropagator};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 
@@ -346,7 +346,7 @@ impl Context {
 
     #[inline(always)]
     fn inner_add_link(&self, ctx: &opentelemetry::trace::SpanContext) -> &Self {
-        if ctx.is_valid() {
+        if ctx.trace_id() != TraceId::INVALID {
             self.context.span().add_link(ctx.clone(), Vec::new());
         }
         self

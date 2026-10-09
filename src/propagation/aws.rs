@@ -234,7 +234,7 @@ impl Context {
     pub fn inject_aws_into(&self, dest: &mut impl ParentDestination) {
         let span = self.context.span();
         let span_context = span.span_context();
-        if span_context.is_valid() {
+        if span_context.trace_id() != TraceId::INVALID {
             dest.set(AWS_XRAY_TRACE_HEADER, encode_span_context(&span_context));
         }
     }
