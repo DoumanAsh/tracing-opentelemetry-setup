@@ -2,6 +2,8 @@
 //!
 //! This module requires feature `propagation-aws`
 
+use core::fmt::self;
+
 use super::{Context, ParentSource, ParentDestination};
 use opentelemetry::trace::{TraceId, TraceFlags, TraceState, SpanId, SpanContext, TraceContextExt};
 use opentelemetry::propagation::{text_map_propagator, TextMapPropagator, Extractor};
@@ -150,12 +152,10 @@ pub fn extract_span_context(header: &str) -> Option<SpanContext> {
     }
 }
 
-///Encodes span context encoding according AWS XRay version 1
-pub fn encode_span_context(ctx: &SpanContext) -> String {
-    use core::fmt::Write;
-
+///Encodes span context into `out` according AWS XRay version 1
+pub fn encode_span_context_to(ctx: &SpanContext, out: &mut impl fmt::Write) -> fmt::Result {
     let mut trace_id_buffer = TraceIdBuffer::new();
-    let _ = Write::write_fmt(&mut trace_id_buffer, format_args!("{}", ctx.trace_id()));
+    let _ = fmt::Write::write_fmt(&mut trace_id_buffer, format_args!("{}", ctx.trace_id()));
     let (time, id) = trace_id_buffer.split_at(8);
 
     let sampling_decision = if ctx.trace_flags() & TRACE_FLAG_DEFERRED == TRACE_FLAG_DEFERRED {
@@ -166,31 +166,31 @@ pub fn encode_span_context(ctx: &SpanContext) -> String {
         NOT_SAMPLED
     };
 
-    let mut trace_state = String::new();
+    out.write_fmt(format_args!("{HEADER_ROOT_KEY}=1-{time}-{id};{HEADER_PARENT_KEY}={:016x};{HEADER_SAMPLED_KEY}={sampling_decision}", ctx.span_id()))?;
     for (state_key, state_value) in ctx.trace_state() {
         if !state_value.is_empty() {
-            trace_state.reserve(state_key.len());
+            out.write_char(';')?;
             let mut characters = state_key.chars();
-
             if let Some(first) = characters.next() {
-                trace_state.push(first.to_ascii_uppercase())
+                out.write_char(first.to_ascii_uppercase())?
             }
-            trace_state.extend(characters)
+            for ch in characters {
+                out.write_char(ch)?
+            }
+            out.write_char('=')?;
+            out.write_str(state_value)?;
         }
-        trace_state.push('=');
-        trace_state.push_str(state_value);
-        trace_state.push(';');
     }
 
-    let trace_state_prefix = if trace_state.is_empty() {
-        ""
-    } else {
-        trace_state.pop();
-        ";"
-    };
+    Ok(())
+}
 
-
-    format!("{HEADER_ROOT_KEY}=1-{time}-{id};{HEADER_PARENT_KEY}={:016x};{HEADER_SAMPLED_KEY}={sampling_decision}{trace_state_prefix}{trace_state}", ctx.span_id())
+///Encodes span context encoding according AWS XRay version 1
+pub fn encode_span_context(ctx: &SpanContext) -> String {
+    let mut result = String::new();
+    //Writing to string cannot fail (OOM will cause panic)
+    let _ = encode_span_context_to(ctx, &mut result);
+    result
 }
 
 impl Context {
