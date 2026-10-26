@@ -2,7 +2,7 @@
 //!
 //! This module requires feature `propagation-aws`
 
-use core::fmt::self;
+use core::fmt;
 
 use super::{Context, ParentSource, ParentDestination};
 use opentelemetry::trace::{TraceId, TraceFlags, TraceState, SpanId, SpanContext, TraceContextExt};

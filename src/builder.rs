@@ -302,10 +302,10 @@ impl Otlp {
     ///Performs shutdown, limiting it to `limit` for individual components
     ///
     ///If `limit` is `None` then performs check of following environment variables:
-    ///- `OTEL_EXPORTER_OTLP_TIMEOUT` - timeout in seconds for all flushes
-    ///- `OTEL_EXPORTER_OTLP_TRACES_TIMEOUT` - timeout in seconds for traces only
-    ///- `OTEL_EXPORTER_OTLP_METRICS_TIMEOUT` - timeout in seconds for metrics only
-    ///- `OTEL_EXPORTER_OTLP_LOGS_TIMEOUT` - timeout in seconds for logs only
+    ///- `OTEL_EXPORTER_OTLP_TIMEOUT` - timeout in millisecond for all flushes
+    ///- `OTEL_EXPORTER_OTLP_TRACES_TIMEOUT` - timeout in millisecond for traces only
+    ///- `OTEL_EXPORTER_OTLP_METRICS_TIMEOUT` - timeout in millisecond for metrics only
+    ///- `OTEL_EXPORTER_OTLP_LOGS_TIMEOUT` - timeout in millisecond for logs only
     ///
     ///If no timeout is available, then defaults to 10s
     pub fn shutdown(&mut self, limit: Option<time::Duration>) -> Result<(), ShutdownError> {
@@ -313,7 +313,7 @@ impl Otlp {
             for key in [key, "OTEL_EXPORTER_OTLP_TIMEOUT"] {
                 if let Ok(value) = env::var(key) {
                     if let Ok(value) = value.parse() {
-                        return time::Duration::from_secs(value)
+                        return time::Duration::from_millis(value)
                     }
                 }
             }
