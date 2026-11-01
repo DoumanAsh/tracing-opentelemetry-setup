@@ -776,6 +776,11 @@ impl TraceSettings {
 
 #[cfg(any(feature = "metrics", feature = "tracing-metrics"))]
 ///Metrics settings
+///
+///Environment variables:
+///
+///- OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE - Specifies override for default
+///temporality. Possible values are: cumulative, delta or lowmemory
 pub struct MetricsSettings {
     temporality: opentelemetry_sdk::metrics::Temporality,
 }
@@ -804,6 +809,19 @@ impl MetricsSettings {
     pub const fn with_low_memory(mut self) -> Self {
         self.temporality = opentelemetry_sdk::metrics::Temporality::LowMemory;
         self
+    }
+
+    fn temporality(&self) -> opentelemetry_sdk::metrics::Temporality {
+        match env::var("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE") {
+            Ok(temporality) if !temporality.is_empty() => match temporality.parse() {
+                Ok(temporality) => temporality,
+                Err(_) => {
+                    opentelemetry::otel_warn!(name: "Tracing.Opentelemetry.Setup", message = format!("Invalid OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE='{temporality}' is supplied. Fallback to default settings"));
+                    self.temporality
+                }
+            },
+            _ => self.temporality,
+        }
     }
 }
 
@@ -1351,7 +1369,7 @@ impl Builder {
             #[cfg(feature = "grpc")]
             Protocol::Grpc => {
                 use opentelemetry_otlp::{WithExportConfig};
-                let mut builder = opentelemetry_otlp::MetricExporter::builder().with_tonic().with_endpoint(_destination.url.clone().into_owned()).with_temporality(_settings.temporality);
+                let mut builder = opentelemetry_otlp::MetricExporter::builder().with_tonic().with_endpoint(_destination.url.clone().into_owned()).with_temporality(_settings.temporality());
 
                 builder = self.apply_otel_grpc_config(builder);
                 let exporter = builder.build().expect("Failed to initialize metrics grpc exporter");
@@ -1364,7 +1382,7 @@ impl Builder {
             http => {
                 use opentelemetry_otlp::WithExportConfig;
                 let url = format!("{}/metrics", _destination.url.trim_end_matches('/'));
-                let mut builder = opentelemetry_otlp::MetricExporter::builder().with_http().with_protocol(http.into_otel()).with_endpoint(url).with_temporality(_settings.temporality);
+                let mut builder = opentelemetry_otlp::MetricExporter::builder().with_http().with_protocol(http.into_otel()).with_endpoint(url).with_temporality(_settings.temporality());
 
                 builder = self.apply_otel_http_config(builder);
 
